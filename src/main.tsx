@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
+import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
 
 type Screen = 'welcome' | 'dashboard' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
@@ -557,6 +558,7 @@ function App() {
     const scan = scans[preview.id] ?? emptyScan;
     const applied = redactionsApplied[preview.id] ?? false;
     const selectedCount = scan.detections.filter((item) => item.selected).length;
+    const privacyScore = calculateRentalPrivacyScore(scan.detections);
 
     return (
       <div className="previewOverlay">
@@ -642,11 +644,21 @@ function App() {
               )}
 
               {scan.detections.length > 0 && (
+                <div className="info">
+                  <ShieldCheck />
+                  <p>
+                    <b>Datenschutz-Score: {privacyScore}/100</b>
+                    <small>Der Wert aktualisiert sich, wenn du Empfehlungen an- oder abwählst.</small>
+                  </p>
+                </div>
+              )}
+
+              {scan.detections.length > 0 && (
                 <div className="detectionList">
                   {scan.detections.map((detection) => (
                     <button key={detection.id} onClick={() => toggleDetection(preview.id, detection.id)}>
                       <span className={detection.selected ? 'tick selected' : 'tick'}>{detection.selected && <Check />}</span>
-                      <span><b>{detection.label}</b><small>{maskedValue(detection.value)} · OCR {detection.confidence}%</small></span>
+                      <span><b>{detection.label} · {getRentalPrivacyRecommendation(detection.label, scan.classification?.type).title}</b><small>{getRentalPrivacyRecommendation(detection.label, scan.classification?.type).reason}</small><small>{maskedValue(detection.value)} · OCR {detection.confidence}%</small></span>
                     </button>
                   ))}
                 </div>
@@ -672,7 +684,7 @@ function App() {
             </button>
           )}
 
-          <small className="localNote">Die Datei bleibt lokal im Browser. PDF-Seiten werden lokal gerendert und als neue, flach gerenderte Datei exportiert. Beta-Erkennung ohne Garantie.</small>
+          <small className="localNote">Die Datei bleibt lokal im Browser. Empfehlungen ersetzen keine rechtliche Beratung und müssen vor dem Export geprüft werden. Beta-Erkennung ohne Garantie.</small>
         </div>
       </div>
     );

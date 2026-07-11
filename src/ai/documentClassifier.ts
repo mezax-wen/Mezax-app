@@ -1,4 +1,5 @@
 export type DocumentType =
+  | 'Anschreiben'
   | 'Gehaltsabrechnung'
   | 'SCHUFA-Auskunft'
   | 'Mieterselbstauskunft'
@@ -20,6 +21,15 @@ type ClassificationRule = {
 };
 
 const rules: ClassificationRule[] = [
+  {
+    type: 'Anschreiben',
+    keywords: [
+      { label: 'Bewerbung um die Wohnung', pattern: /\bBEWERBUNG (?:UM|F[UÜ]R) (?:DIE )?WOHNUNG\b/, weight: 5 },
+      { label: 'Sehr geehrte', pattern: /\bSEHR GEEHRTE\b/, weight: 2 },
+      { label: 'Mietinteresse', pattern: /\bMIETINTERESSE\b/, weight: 2 },
+      { label: 'Besichtigung', pattern: /\bBESICHTIGUNG\b/, weight: 1 },
+    ],
+  },
   {
     type: 'Gehaltsabrechnung',
     keywords: [

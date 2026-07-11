@@ -1,6 +1,7 @@
 import { classifyDocument } from './documentClassifier';
 
 const cases = [
+  ['Anschreiben', 'Sehr geehrte Damen und Herren Bewerbung um die Wohnung nach unserer Besichtigung'],
   ['Gehaltsabrechnung', 'Gehaltsabrechnung Januar Brutto Netto Lohnsteuer Sozialversicherung'],
   ['SCHUFA-Auskunft', 'SCHUFA BonitätsAuskunft Basisscore Bonitätsinformationen'],
   ['Mieterselbstauskunft', 'Mieterselbstauskunft Mietinteressent einziehende Personen Mietverhältnis'],

@@ -31,12 +31,15 @@ import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './a
 type Screen = 'welcome' | 'dashboard' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
 
+type RequiredDocument = 'Anschreiben' | 'Mieterselbstauskunft' | 'Gehaltsnachweise' | 'SCHUFA-Auskunft' | 'Ausweiskopie';
+
 type Doc = {
   id: number;
   name: string;
   size: number;
   type: string;
   url: string;
+  slot?: RequiredDocument;
 };
 
 type WordBox = {
@@ -85,7 +88,18 @@ const required = [
   'Gehaltsnachweise',
   'SCHUFA-Auskunft',
   'Ausweiskopie',
-];
+] as const;
+
+function slotForClassification(type: DocumentClassification['type']): RequiredDocument | undefined {
+  const slots: Partial<Record<DocumentClassification['type'], RequiredDocument>> = {
+    Anschreiben: 'Anschreiben',
+    Mieterselbstauskunft: 'Mieterselbstauskunft',
+    Gehaltsabrechnung: 'Gehaltsnachweise',
+    'SCHUFA-Auskunft': 'SCHUFA-Auskunft',
+    Identitätsnachweis: 'Ausweiskopie',
+  };
+  return slots[type];
+}
 
 const emptyScan: ScanResult = {
   status: 'idle',
@@ -306,6 +320,9 @@ function App() {
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
 
+  const completedRequired = useMemo(() => new Set(docs.flatMap((doc) => doc.slot ? [doc.slot] : [])).size, [docs]);
+  const completion = Math.round((completedRequired / required.length) * 100);
+
   const findings = useMemo(() => {
     const all = Object.values(scans).flatMap((scan) => scan.detections.filter((item) => item.selected));
     const counts = new Map<string, number>();
@@ -313,7 +330,7 @@ function App() {
     return [...counts.entries()];
   }, [scans]);
 
-  function addFiles(fileList: FileList | null) {
+  function addFiles(fileList: FileList | null, slot?: RequiredDocument) {
     if (!fileList) return;
     setDocs((current) => [
       ...current,
@@ -323,6 +340,7 @@ function App() {
         size: file.size,
         type: file.type || '',
         url: URL.createObjectURL(file),
+        slot,
       })),
     ]);
   }
@@ -407,6 +425,10 @@ function App() {
       const words = parseTsv(data.tsv ?? '');
       const detections = detectSensitiveData(words);
       const classification = classifyDocument(data.text ?? '');
+      const inferredSlot = slotForClassification(classification.type);
+      if (inferredSlot) {
+        setDocs((current) => current.map((item) => item.id === doc.id ? { ...item, slot: item.slot ?? inferredSlot } : item));
+      }
 
       setScans((current) => ({
         ...current,
@@ -767,7 +789,21 @@ function App() {
             <input hidden multiple type="file" accept=".pdf,image/*" onChange={(event) => addFiles(event.target.files)} />
           </label>
           <h3>Empfohlene Unterlagen</h3>
-          <div className="list">{required.map((item) => <div key={item}><FileText /><span>{item}</span><Plus /></div>)}</div>
+          <div className="folderProgress">
+            <div><b>{completion}% vollständig</b><small>{completedRequired} von {required.length} Kategorien vorhanden</small></div>
+            <div className="progressTrack"><span style={{ width: `${completion}%` }} /></div>
+          </div>
+          <div className="list recommendedList">{required.map((item) => {
+            const assigned = docs.find((doc) => doc.slot === item);
+            return (
+              <label className={assigned ? 'recommendedDoc ready' : 'recommendedDoc'} key={item}>
+                <FileText />
+                <span><b>{item}</b><small>{assigned?.name ?? 'Noch nicht hinzugefügt'}</small></span>
+                <input hidden multiple={item === 'Gehaltsnachweise'} type="file" accept=".pdf,image/*" onChange={(event) => addFiles(event.target.files, item)} />
+                {assigned ? <Check /> : <Plus />}
+              </label>
+            );
+          })}</div>
 
           {docs.length > 0 && (
             <>
@@ -780,6 +816,7 @@ function App() {
                       <FileText />
                       <span>
                         <b>{doc.name}</b>
+                        <small>{doc.slot ? `${doc.slot} · ` : ''}</small>
                         <small>{(doc.size / 1048576).toFixed(2)} MB{scan?.status === 'done' ? ` · ${scan.classification?.type ?? 'Sonstiges'} (${scan.classification?.confidence ?? 0}%) · ${scan.detections.length} Treffer` : ''}</small>
                       </span>
                       <button className="openBtn" onClick={() => openPreview(doc)}>Öffnen</button>

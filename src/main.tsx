@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import './styles.css';
+import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
 
 type Screen = 'welcome' | 'dashboard' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
@@ -71,6 +72,7 @@ type ScanResult = {
   height: number;
   detections: Detection[];
   text: string;
+  classification?: DocumentClassification;
   renderedUrl?: string;
   pdfPages?: PdfPageMeta[];
   error?: string;
@@ -403,6 +405,7 @@ function App() {
       const data = result.data as typeof result.data & { tsv?: string };
       const words = parseTsv(data.tsv ?? '');
       const detections = detectSensitiveData(words);
+      const classification = classifyDocument(data.text ?? '');
 
       setScans((current) => ({
         ...current,
@@ -416,6 +419,7 @@ function App() {
           height: dimensions.height,
           detections,
           text: data.text ?? '',
+          classification,
           renderedUrl: sourceUrl,
           pdfPages,
         },
@@ -627,6 +631,16 @@ function App() {
                 </div>
               </div>
 
+              {scan.classification && (
+                <div className="info documentClassification">
+                  <FileText />
+                  <p>
+                    <b>{scan.classification.type} · {scan.classification.confidence}% sicher erkannt</b>
+                    <small>{scan.classification.explanation}</small>
+                  </p>
+                </div>
+              )}
+
               {scan.detections.length > 0 && (
                 <div className="detectionList">
                   {scan.detections.map((detection) => (
@@ -754,7 +768,7 @@ function App() {
                       <FileText />
                       <span>
                         <b>{doc.name}</b>
-                        <small>{(doc.size / 1048576).toFixed(2)} MB{scan?.status === 'done' ? ` · ${scan.detections.length} Treffer` : ''}</small>
+                        <small>{(doc.size / 1048576).toFixed(2)} MB{scan?.status === 'done' ? ` · ${scan.classification?.type ?? 'Sonstiges'} (${scan.classification?.confidence ?? 0}%) · ${scan.detections.length} Treffer` : ''}</small>
                       </span>
                       <button className="openBtn" onClick={() => openPreview(doc)}>Öffnen</button>
                       <button className="icon" onClick={() => removeDoc(doc.id)} aria-label="Datei entfernen"><X /></button>

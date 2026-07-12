@@ -27,11 +27,10 @@ import {
 import './styles.css';
 import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
+import { folderCompleteness, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 
 type Screen = 'welcome' | 'dashboard' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
-
-type RequiredDocument = 'Anschreiben' | 'Mieterselbstauskunft' | 'Gehaltsnachweise' | 'SCHUFA-Auskunft' | 'Ausweiskopie';
 
 type Doc = {
   id: number;
@@ -82,13 +81,7 @@ type ScanResult = {
   error?: string;
 };
 
-const required = [
-  'Anschreiben',
-  'Mieterselbstauskunft',
-  'Gehaltsnachweise',
-  'SCHUFA-Auskunft',
-  'Ausweiskopie',
-] as const;
+const required = requiredDocumentOrder;
 
 function slotForClassification(type: DocumentClassification['type']): RequiredDocument | undefined {
   const slots: Partial<Record<DocumentClassification['type'], RequiredDocument>> = {
@@ -319,9 +312,11 @@ function App() {
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
+  const [exportingFolder, setExportingFolder] = useState(false);
 
-  const completedRequired = useMemo(() => new Set(docs.flatMap((doc) => doc.slot ? [doc.slot] : [])).size, [docs]);
-  const completion = Math.round((completedRequired / required.length) * 100);
+  const completeness = useMemo(() => folderCompleteness(docs), [docs]);
+  const completedRequired = completeness.completed;
+  const completion = completeness.percent;
 
   const findings = useMemo(() => {
     const all = Object.values(scans).flatMap((scan) => scan.detections.filter((item) => item.selected));
@@ -557,6 +552,117 @@ function App() {
 
     const baseName = doc.name.replace(/\.[^.]+$/, '');
     output.save(`${baseName}-geschuetzt.pdf`);
+  }
+
+  async function downloadApplicationFolder() {
+    const exportable = sortFolderDocuments(docs).filter((doc) => {
+      const scan = scans[doc.id];
+      return scan?.status === 'done' && Boolean(scan.renderedUrl);
+    });
+    if (!exportable.length) return;
+    if (exportable.length !== docs.length) {
+      window.alert('Bitte öffne und prüfe zuerst jedes hinzugefügte Dokument. Ungeprüfte Dateien werden nicht exportiert.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Jetzt wird eine neue, dauerhaft geschwärzte PDF erzeugt. Die Originaldateien bleiben unverändert. Fortfahren?',
+    );
+    if (!confirmed) return;
+
+    setExportingFolder(true);
+    try {
+      const output = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
+      const pageWidth = output.internal.pageSize.getWidth();
+      const pageHeight = output.internal.pageSize.getHeight();
+
+      output.setFillColor(7, 21, 40);
+      output.rect(0, 0, pageWidth, pageHeight, 'F');
+      output.setTextColor(32, 197, 139);
+      output.setFontSize(18);
+      output.text('MEZAX', 48, 72);
+      output.setTextColor(255, 255, 255);
+      output.setFontSize(30);
+      output.text('Wohnungsbewerbung', 48, 150);
+      output.setFontSize(18);
+      output.text(title || 'Bewerbungsmappe', 48, 188);
+      output.setTextColor(190, 205, 218);
+      output.setFontSize(12);
+      output.text(address || 'Adresse nicht angegeben', 48, 216);
+      output.text('Datenschutzfreundlich zusammengestellt · Originale bleiben unverändert', 48, pageHeight - 72);
+
+      output.addPage('a4', 'portrait');
+      output.setTextColor(15, 23, 42);
+      output.setFontSize(22);
+      output.text('Inhaltsübersicht', 48, 62);
+      output.setFontSize(11);
+      exportable.forEach((doc, index) => {
+        const label = doc.slot ?? 'Sonstige Unterlage';
+        output.text(`${index + 1}. ${label} – ${doc.name}`, 56, 100 + index * 24);
+      });
+
+      let exportedPage = 2;
+      for (const doc of exportable) {
+        const scan = scans[doc.id];
+        if (!scan?.renderedUrl) continue;
+        const image = new Image();
+        image.src = scan.renderedUrl;
+        await image.decode();
+        const pages = scan.pdfPages?.length
+          ? scan.pdfPages
+          : [{ top: 0, width: scan.width || image.naturalWidth, height: scan.height || image.naturalHeight }];
+
+        for (const page of pages) {
+          const canvas = document.createElement('canvas');
+          canvas.width = page.width;
+          canvas.height = page.height;
+          const context = canvas.getContext('2d');
+          if (!context) continue;
+          context.fillStyle = '#ffffff';
+          context.fillRect(0, 0, page.width, page.height);
+          context.drawImage(image, 0, page.top, page.width, page.height, 0, 0, page.width, page.height);
+          context.fillStyle = '#000000';
+
+          for (const detection of scan.detections.filter((item) => item.selected)) {
+            const centerY = detection.bbox.top + detection.bbox.height / 2;
+            if (centerY < page.top || centerY >= page.top + page.height) continue;
+            const padding = Math.max(3, Math.round(detection.bbox.height * 0.12));
+            context.fillRect(
+              Math.max(0, detection.bbox.left - padding),
+              Math.max(0, detection.bbox.top - page.top - padding),
+              Math.min(page.width, detection.bbox.width + padding * 2),
+              Math.min(page.height, detection.bbox.height + padding * 2),
+            );
+          }
+
+          output.addPage('a4', 'portrait');
+          exportedPage += 1;
+          const margin = 38;
+          const ratio = Math.min((pageWidth - margin * 2) / page.width, (pageHeight - 90) / page.height);
+          const drawWidth = page.width * ratio;
+          const drawHeight = page.height * ratio;
+          output.addImage(
+            canvas.toDataURL('image/jpeg', 0.93),
+            'JPEG',
+            (pageWidth - drawWidth) / 2,
+            35,
+            drawWidth,
+            drawHeight,
+            undefined,
+            'FAST',
+          );
+          output.setTextColor(145, 154, 166);
+          output.setFontSize(13);
+          output.text(watermark || 'Nur für diese Wohnungsbewerbung', pageWidth / 2, pageHeight / 2, { align: 'center', angle: 45 });
+          output.setFontSize(9);
+          output.text(`${doc.slot ?? doc.name} · Seite ${exportedPage}`, 38, pageHeight - 24);
+        }
+      }
+
+      output.save(safeFolderFileName(title));
+    } finally {
+      setExportingFolder(false);
+    }
   }
 
   const Header = ({ name, back }: { name: string; back?: Screen }) => (
@@ -884,13 +990,14 @@ function App() {
       <section className="content center">
         <div className="success"><Check /></div>
         <h2>Prüfung abgeschlossen</h2>
-        <p className="muted">Geschützte Bildkopien speicherst du direkt in der jeweiligen Vorschau.</p>
+        <p className="muted">Erstelle jetzt eine neue, geschützte Gesamt-PDF. Deine Originale bleiben unverändert.</p>
         <div className="export">
-          <div><Check /> Lokale Bildanalyse</div>
-          <div><Check /> Automatische Vorschläge</div>
-          <div><Check /> Irreversibel gerenderte PNG-Kopie</div>
-          <div><AlertTriangle /> PDF-Mappe folgt als nächster Baustein</div>
+          <div><Check /> Deckblatt und Inhaltsübersicht</div>
+          <div><Check /> Automatisch sortierte Unterlagen</div>
+          <div><Check /> Ausgewählte Schwärzungen fest eingebrannt</div>
+          <div><Check /> Persönliches Wasserzeichen auf jeder Dokumentseite</div>
         </div>
+        <button className="primary" disabled={exportingFolder || !docs.some((doc) => scans[doc.id]?.status === 'done')} onClick={downloadApplicationFolder}><Download /> {exportingFolder ? 'PDF wird erstellt …' : 'Geschützte Bewerbungsmappe erstellen'}</button>
         <button className="secondary" onClick={() => setScreen('documents')}>Zurück zu Dokumenten</button>
       </section>
     </main>

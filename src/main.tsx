@@ -915,18 +915,6 @@ function App() {
     );
   };
 
-  if (showSplash) {
-    return (
-      <main className="app splash" aria-label="Mezax wird gestartet">
-        <div className="brandLockupWrap splashBrand">
-          <img className="brandLockup" src="/mezax-brand-lockup.png" alt="MEZAX" />
-          <span className="fingerprintSweep" aria-hidden="true" />
-        </div>
-        <p>Teile Dokumente. <span>Nicht deine Daten.</span></p>
-      </main>
-    );
-  }
-
   if (screen === 'welcome') {
     return (
       <main className="app welcome">

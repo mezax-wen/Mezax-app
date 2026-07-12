@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import "./landing-page.css";
 
 const steps = [
@@ -49,9 +49,12 @@ const benefits = [
 
 function BrandMark({ compact = false }) {
   return (
-    <span className={`brand-mark${compact ? " brand-mark--compact" : ""}`} aria-hidden="true">
-      M
-    </span>
+    <img
+      className={`brand-logo${compact ? " brand-logo--compact" : ""}`}
+      src="/mezax-logo.svg"
+      alt=""
+      aria-hidden="true"
+    />
   );
 }
 

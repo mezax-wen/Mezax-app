@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
-import { findValidIbans, shouldDetectGermanTaxId, shouldDetectSocialSecurityNumber } from './ai/sensitiveValidators';
+import { findIdentityDocumentNumber, findLabeledIdentityDocumentNumber, findValidIbans, isMachineReadableZoneLine, shouldDetectGermanTaxId, shouldDetectSocialSecurityNumber } from './ai/sensitiveValidators';
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
 import { folderCompleteness, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
@@ -177,6 +177,7 @@ function detectSensitiveData(words: WordBox[]): Detection[] {
 
   for (const lineWordsUnsorted of lines.values()) {
     const lineWords = [...lineWordsUnsorted].sort((a, b) => a.left - b.left);
+    const rawLine = lineWords.map((word) => word.text).join(' ');
     let compact = '';
     const ranges: Array<{ start: number; end: number; word: WordBox }> = [];
 
@@ -208,14 +209,24 @@ function detectSensitiveData(words: WordBox[]): Detection[] {
       addDetection('Steuer-ID', match[0], wordsForRange(start, start + match[0].length));
     }
 
-    const idLabel = /(AUSWEISNUMMER|DOKUMENTENNUMMER|DOCUMENTNUMBER|DOCUMENTNO)/.exec(compact);
-    if (idLabel) {
-      const afterLabel = compact.slice((idLabel.index ?? 0) + idLabel[0].length);
-      const idMatch = /[A-Z0-9]{8,10}/.exec(afterLabel);
-      if (idMatch) {
-        const start = (idLabel.index ?? 0) + idLabel[0].length + (idMatch.index ?? 0);
-        addDetection('Ausweisnummer', idMatch[0], wordsForRange(start, start + idMatch[0].length));
-      }
+    const identityNumber = findIdentityDocumentNumber(compact);
+    if (identityNumber) {
+      addDetection(
+        'Ausweisnummer',
+        identityNumber.value,
+        wordsForRange(identityNumber.index, identityNumber.index + identityNumber.value.length),
+      );
+    }
+
+    if (isMachineReadableZoneLine(rawLine)) {
+      addDetection('Maschinenlesbare Zone (MRZ)', 'MRZ-Zeile', lineWords);
+    }
+  }
+
+  if (!detections.some((detection) => detection.label === 'Ausweisnummer')) {
+    const positionedNumber = findLabeledIdentityDocumentNumber(words);
+    if (positionedNumber) {
+      addDetection('Ausweisnummer', positionedNumber.normalized, [positionedNumber]);
     }
   }
 

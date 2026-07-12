@@ -42,3 +42,62 @@ export function shouldDetectSocialSecurityNumber(line: string, value: string) {
   if (!/^\d{8}[A-Z]\d{3}$/.test(value)) return false;
   return /(?:SOZIALVERSICHERUNG|VERSICHERUNGSNUMMER|SVNUMMER|RENTENVERSICHERUNG)/.test(line);
 }
+
+export function findIdentityDocumentNumber(text: string) {
+  const compact = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const label = /(?:AUSWEIS(?:NUMMER|NR)|DOKUMENT(?:EN)?(?:NUMMER|NR)|DOCUMENT(?:NUMBER|NO|NR))/.exec(compact);
+  if (!label) return undefined;
+
+  const valueStart = (label.index ?? 0) + label[0].length;
+  const valueMatch = /[A-Z0-9]{8,12}/.exec(compact.slice(valueStart));
+  if (!valueMatch) return undefined;
+
+  return {
+    value: valueMatch[0],
+    index: valueStart + (valueMatch.index ?? 0),
+  };
+}
+
+export type PositionedIdentityToken = {
+  normalized: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+export function findLabeledIdentityDocumentNumber(tokens: PositionedIdentityToken[]) {
+  const labels = tokens.filter((token) =>
+    /^(?:AUSWEIS(?:NUMMER|NR)|DOKUMENT(?:EN)?(?:NUMMER|NR))$/.test(token.normalized),
+  );
+
+  for (const label of labels) {
+    const candidates = tokens
+      .filter((token) => {
+        if (!/^[A-Z0-9]{8,12}$/.test(token.normalized)) return false;
+        if (!/[A-Z]/.test(token.normalized) || !/\d/.test(token.normalized)) return false;
+        const verticalDistance = token.top - (label.top + label.height);
+        const horizontalDistance = Math.abs(token.left - label.left);
+        return verticalDistance >= -4 && verticalDistance <= Math.max(80, label.height * 5) && horizontalDistance <= 180;
+      })
+      .sort((a, b) => {
+        const aDistance = Math.abs(a.top - (label.top + label.height)) + Math.abs(a.left - label.left) * 0.2;
+        const bDistance = Math.abs(b.top - (label.top + label.height)) + Math.abs(b.left - label.left) * 0.2;
+        return aDistance - bDistance;
+      });
+    if (candidates[0]) return candidates[0];
+  }
+  return undefined;
+}
+
+export function isMachineReadableZoneLine(text: string) {
+  const machineText = text.toUpperCase().replace(/\s/g, '').replace(/[^A-Z0-9<]/g, '');
+  if (machineText.length < 20) return false;
+
+  const fillerCount = machineText.match(/</g)?.length ?? 0;
+  if (fillerCount >= 3) return true;
+
+  const compact = machineText.replace(/</g, '');
+  const identityPrefix = /^I[D0]D/.test(compact) || /^P[A-Z0-9]{1,3}/.test(compact);
+  return identityPrefix && compact.length >= 24 && /\d{6}/.test(compact);
+}

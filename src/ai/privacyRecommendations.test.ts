@@ -1,6 +1,6 @@
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './privacyRecommendations';
 
-for (const label of ['Steuer-ID', 'Sozialversicherungsnummer', 'Ausweisnummer', 'IBAN']) {
+for (const label of ['Steuer-ID', 'Sozialversicherungsnummer', 'Ausweisnummer', 'Maschinenlesbare Zone (MRZ)', 'IBAN']) {
   const recommendation = getRentalPrivacyRecommendation(label);
   if (recommendation.action !== 'redact' || !recommendation.reason) {
     throw new Error(`Fehlende Schwärzungsempfehlung für ${label}`);

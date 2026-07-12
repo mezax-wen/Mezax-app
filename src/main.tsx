@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createWorker } from 'tesseract.js';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
@@ -100,15 +100,7 @@ const emptyScan: ScanResult = {
 function Logo({ small = false }: { small?: boolean }) {
   return (
     <div className={small ? 'logo small' : 'logo'} aria-label="Mezax">
-      <svg viewBox="0 0 100 112" role="img">
-        <path
-          d="M16 18 L50 43 L84 18 V72 C84 88 69 99 50 106 C31 99 16 88 16 72 Z"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="10"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <img src="/mezax-logo.svg" alt="" />
     </div>
   );
 }
@@ -291,6 +283,7 @@ async function renderPdfToComposite(url: string, onProgress?: (page: number, tot
 }
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<Screen>('welcome');
   const [title, setTitle] = useState('Wohnung in Berlin');
   const [address, setAddress] = useState('Musterstraße 12, 10115 Berlin');
@@ -300,6 +293,12 @@ function App() {
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowSplash(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const [confirmingExport, setConfirmingExport] = useState<number | null>(null);
   const [exportingFolder, setExportingFolder] = useState(false);
   const [batchScanning, setBatchScanning] = useState(false);
   const [manualMode, setManualMode] = useState(false);
@@ -344,6 +343,11 @@ function App() {
       delete next[id];
       return next;
     });
+  }
+
+  function correctDocumentAssignment(docId: number, slot: RequiredDocument) {
+    setDocs((current) => current.map((doc) => doc.id === docId ? { ...doc, slot } : doc));
+    setPreview((current) => current?.id === docId ? { ...current, slot } : current);
   }
 
   async function scanDocument(doc: Doc) {
@@ -469,6 +473,7 @@ function App() {
   function openPreview(doc: Doc) {
     setManualMode(false);
     setManualDraft(null);
+    setConfirmingExport(null);
     setPreview(doc);
     const supported = doc.type.startsWith('image/') || doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
     if (supported && !scans[doc.id]) {
@@ -524,6 +529,7 @@ function App() {
       },
     }));
     setRedactionsApplied((current) => ({ ...current, [docId]: false }));
+    setConfirmingExport(null);
   }
 
   function toggleDetection(docId: number, detectionId: string) {
@@ -537,6 +543,7 @@ function App() {
       },
     }));
     setRedactionsApplied((current) => ({ ...current, [docId]: false }));
+    setConfirmingExport(null);
   }
 
   async function downloadRedacted(doc: Doc, scan: ScanResult) {
@@ -839,7 +846,14 @@ function App() {
               {assignmentReview.status === 'mismatch' && (
                 <div className="warning assignmentWarning">
                   <AlertTriangle />
-                  <p><b>Möglicherweise falsch zugeordnet</b><br />{assignmentReview.message}</p>
+                  <div>
+                    <p><b>Möglicherweise falsch zugeordnet</b><br />{assignmentReview.message}</p>
+                    {assignmentReview.detectedSlot && (
+                      <button className="secondary compact assignmentCorrection" onClick={() => correctDocumentAssignment(preview.id, assignmentReview.detectedSlot!)}>
+                        Als „{assignmentReview.detectedSlot}“ einordnen
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -870,15 +884,33 @@ function App() {
               )}
 
               {selectedCount > 0 && !applied && (
-                <button className="primary" onClick={() => setRedactionsApplied((current) => ({ ...current, [preview.id]: true }))}>
+                <button className="primary" onClick={() => { setRedactionsApplied((current) => ({ ...current, [preview.id]: true })); setConfirmingExport(null); }}>
                   <WandSparkles /> {selectedCount} Schwärzung(en) anwenden
                 </button>
               )}
 
-              {selectedCount > 0 && applied && (
-                <button className="primary" onClick={() => isPdf ? downloadRedactedPdf(preview, scan) : downloadRedacted(preview, scan)}>
-                  <Download /> Geschützte {isPdf ? 'PDF' : 'Kopie'} speichern
-                </button>
+              {selectedCount > 0 && applied && confirmingExport !== preview.id && (
+                <div className="redactionActions">
+                  <button className="secondary compact" onClick={() => { setRedactionsApplied((current) => ({ ...current, [preview.id]: false })); setConfirmingExport(null); }}>
+                    <ArrowLeft /> Auswahl weiter bearbeiten
+                  </button>
+                  <button className="primary" onClick={() => setConfirmingExport(preview.id)}>
+                    <Download /> Geschützte {isPdf ? 'PDF' : 'Kopie'} speichern
+                  </button>
+                </div>
+              )}
+
+              {selectedCount > 0 && applied && confirmingExport === preview.id && (
+                <div className="exportConfirmation">
+                  <div className="warning">
+                    <LockKeyhole />
+                    <p><b>Endgültige geschützte Kopie erstellen?</b><br />In der exportierten Datei können die Schwärzungen nicht rückgängig gemacht werden. Das Original bleibt unverändert.</p>
+                  </div>
+                  <button className="secondary compact" onClick={() => setConfirmingExport(null)}>Abbrechen</button>
+                  <button className="primary" onClick={() => { setConfirmingExport(null); void (isPdf ? downloadRedactedPdf(preview, scan) : downloadRedacted(preview, scan)); }}>
+                    <Download /> Endgültig exportieren
+                  </button>
+                </div>
               )}
             </>
           )}
@@ -899,9 +931,7 @@ function App() {
     return (
       <main className="app welcome">
         <section>
-          <Logo />
-          <h1>Mezax</h1>
-          <p className="tag">Teile Dokumente.<br /><span>Nicht deine Daten.</span></p>
+          <img className="startBrand" src="/mezax-start-teal.png?v=final-dark" width="1570" height="1001" alt="MEZAX – Teile Dokumente. Nicht deine Daten." />
         </section>
         <div className="trust">
           <div><ShieldCheck /><p><b>Datenschutz zuerst</b><small>Sensible Daten werden geprüft.</small></p></div>

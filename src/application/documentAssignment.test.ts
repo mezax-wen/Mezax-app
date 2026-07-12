@@ -16,8 +16,8 @@ if (reviewDocumentAssignment('SCHUFA-Auskunft', schufa).status !== 'match') {
 }
 
 const mismatch = reviewDocumentAssignment('Gehaltsnachweise', schufa);
-if (mismatch.status !== 'mismatch' || !mismatch.message.includes('Bitte prüfen')) {
-  throw new Error('Falsche Dokumentzuordnung wurde nicht gewarnt.');
+if (mismatch.status !== 'mismatch' || mismatch.detectedSlot !== 'SCHUFA-Auskunft' || !mismatch.message.includes('Bitte prüfen')) {
+  throw new Error('Falsche Dokumentzuordnung wurde nicht mit korrigierbarem Ziel gewarnt.');
 }
 
 if (reviewDocumentAssignment('Gehaltsnachweise', { ...schufa, confidence: 42 }).status !== 'uncertain') {

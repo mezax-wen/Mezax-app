@@ -24,3 +24,25 @@
 .assignmentWarning{align-items:flex-start}.assignmentWarning svg{flex:0 0 auto;color:#c77b00}.assignmentMismatch{color:#a85f00!important;font-weight:700;line-height:1.35}
 
 .redactionActions,.exportConfirmation{display:grid;gap:10px;margin-top:12px}.redactionActions .primary,.exportConfirmation .primary{margin-top:0}.exportConfirmation .warning{margin-top:0}.exportConfirmation .secondary{margin-top:0}
+
+.logo img{width:100%;display:block}
+.splash{min-height:100vh;padding:0;display:grid;place-content:center;justify-items:center;gap:10px;overflow:hidden;background:radial-gradient(circle at 50% 42%,#07323a 0,#020d12 48%,#010509 78%);color:#fff}
+.splashMark{position:relative;width:230px;animation:splashEnter .75s cubic-bezier(.2,.75,.2,1) both}
+.splashMark .logo{width:230px;filter:drop-shadow(0 0 18px #21f4ee55)}
+.splashWordmark{font-family:Eurostile,"Bank Gothic","Segoe UI",sans-serif;font-size:56px;font-weight:700;letter-spacing:9px;line-height:1;text-transform:lowercase;animation:wordEnter .5s .45s ease-out both}
+.splash>p{margin:12px 0 0;color:#8ca7a9;font-size:12px;letter-spacing:1.3px;text-transform:uppercase;animation:wordEnter .5s .65s ease-out both}
+.fingerprintSweep{position:absolute;inset:18% 19% 13%;overflow:hidden;pointer-events:none}
+.fingerprintSweep::after{content:"";position:absolute;left:-55%;top:-15%;width:24%;height:130%;transform:rotate(16deg);background:linear-gradient(90deg,transparent,#c9ffffaa,transparent);filter:blur(6px);animation:fingerprintSweep .7s .55s ease-in-out both}
+@keyframes splashEnter{from{opacity:0;transform:scale(.88) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes wordEnter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fingerprintSweep{from{left:-55%;opacity:0}25%{opacity:1}to{left:130%;opacity:0}}
+@media(prefers-reduced-motion:reduce){.splashMark,.splashWordmark,.splash>p,.fingerprintSweep::after{animation:none}}
+.welcome .logo{width:145px}
+.splashMark{width:280px}
+.splashMark .logo{width:280px}
+.splashWordmark{font-size:62px;letter-spacing:12px}
+.splash>p{font-size:14px;letter-spacing:.2px;text-transform:none}
+.splash>p span{color:#12d9d7}
+.mezaxWordmark{display:block;object-fit:contain}
+.splashWordmark{width:330px;height:auto;animation:wordEnter .5s .45s ease-out both}
+.welcomeWordmark{width:245px;height:auto;margin:8px auto 2px}

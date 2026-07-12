@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createWorker } from 'tesseract.js';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
@@ -100,15 +100,7 @@ const emptyScan: ScanResult = {
 function Logo({ small = false }: { small?: boolean }) {
   return (
     <div className={small ? 'logo small' : 'logo'} aria-label="Mezax">
-      <svg viewBox="0 0 100 112" role="img">
-        <path
-          d="M16 18 L50 43 L84 18 V72 C84 88 69 99 50 106 C31 99 16 88 16 72 Z"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="10"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <img src="/mezax-logo.svg" alt="" />
     </div>
   );
 }
@@ -291,6 +283,7 @@ async function renderPdfToComposite(url: string, onProgress?: (page: number, tot
 }
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<Screen>('welcome');
   const [title, setTitle] = useState('Wohnung in Berlin');
   const [address, setAddress] = useState('Musterstraße 12, 10115 Berlin');
@@ -300,6 +293,11 @@ function App() {
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowSplash(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [confirmingExport, setConfirmingExport] = useState<number | null>(null);
   const [exportingFolder, setExportingFolder] = useState(false);
   const [batchScanning, setBatchScanning] = useState(false);
@@ -917,12 +915,25 @@ function App() {
     );
   };
 
+  if (showSplash) {
+    return (
+      <main className="app splash" aria-label="Mezax wird gestartet">
+        <div className="splashMark">
+          <Logo />
+          <span className="fingerprintSweep" aria-hidden="true" />
+        </div>
+        <img className="mezaxWordmark splashWordmark" src="/mezax-wordmark.png" alt="MEZAX" />
+        <p>Teile Dokumente. <span>Nicht deine Daten.</span></p>
+      </main>
+    );
+  }
+
   if (screen === 'welcome') {
     return (
       <main className="app welcome">
         <section>
           <Logo />
-          <h1>Mezax</h1>
+          <img className="mezaxWordmark welcomeWordmark" src="/mezax-wordmark.png" alt="MEZAX" />
           <p className="tag">Teile Dokumente.<br /><span>Nicht deine Daten.</span></p>
         </section>
         <div className="trust">

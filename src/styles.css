@@ -40,4 +40,4 @@ nav{background:#10242b;border-top-color:#1d3840;box-shadow:0 -10px 30px #0a1a202
 nav button{color:#8da2a8}
 nav button.active{color:#36e1c0;background:#173139}
 nav button.active small{font-weight:800}
-.startBrand{display:block;width:400px;max-width:100%;height:auto;margin:-12px auto -8px;object-fit:contain;image-rendering:auto}
+.startBrand{display:block;width:420px;max-width:110%;height:auto;margin:-18px -5% -8px;object-fit:contain;image-rendering:auto}

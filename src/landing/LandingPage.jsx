@@ -1,0 +1,225 @@
+import { useState } from "react";
+import "./landing-page.css";
+
+const steps = [
+  {
+    number: "01",
+    title: "Unterlagen hinzufügen",
+    text: "Lade Gehaltsnachweise, SCHUFA-Auskunft und weitere Dokumente sicher hoch.",
+  },
+  {
+    number: "02",
+    title: "Automatisch prüfen",
+    text: "Mezax erkennt sensible Angaben und erklärt, warum Schutz sinnvoll sein kann.",
+  },
+  {
+    number: "03",
+    title: "Empfehlungen bestätigen",
+    text: "Du kontrollierst jeden Vorschlag und entscheidest selbst, was geschwärzt wird.",
+  },
+  {
+    number: "04",
+    title: "Sicher exportieren",
+    text: "Erstelle eine professionelle, datenschutzfreundliche Bewerbungsmappe als PDF.",
+  },
+];
+
+const benefits = [
+  {
+    icon: "scan",
+    title: "Intelligente Prüfung",
+    text: "Erkennt mögliche Steuer-IDs, IBANs, Versicherungsnummern und weitere sensible Angaben.",
+  },
+  {
+    icon: "explain",
+    title: "Verständliche Empfehlungen",
+    text: "Nicht nur markieren: Mezax erklärt, warum eine Angabe für die Wohnungsbewerbung unnötig sein kann.",
+  },
+  {
+    icon: "original",
+    title: "Original bleibt erhalten",
+    text: "Deine Originaldatei wird nicht überschrieben. Mezax erstellt eine neue geschützte Version.",
+  },
+  {
+    icon: "local",
+    title: "Privatsphäre im Mittelpunkt",
+    text: "Die Verarbeitung ist auf eine möglichst lokale, transparente Nutzung ausgelegt.",
+  },
+];
+
+function BrandMark({ compact = false }) {
+  return (
+    <span className={`brand-mark${compact ? " brand-mark--compact" : ""}`} aria-hidden="true">
+      M
+    </span>
+  );
+}
+
+function Icon({ name }) {
+  const paths = {
+    scan: <><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8M8 15h5"/></>,
+    explain: <><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M12 16v-4M12 8h.01"/></>,
+    original: <><path d="M14 2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/><path d="M9 22h9a2 2 0 0 0 2-2V7M8 7h4M8 11h4"/></>,
+    local: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-5"/></>,
+  };
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
+function WaitlistForm({ compact = false }) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("idle");
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    if (!email.trim()) return;
+    // Placeholder: Replace with your Brevo/API request.
+    setStatus("success");
+  }
+
+  if (status === "success") {
+    return (
+      <div className="form-success" role="status">
+        <span>✓</span>
+        <div><strong>Du bist auf der Liste.</strong><small>Wir informieren dich zum Start von Mezax.</small></div>
+      </div>
+    );
+  }
+
+  return (
+    <form className={`waitlist-form${compact ? " waitlist-form--compact" : ""}`} onSubmit={handleSubmit}>
+      <label className="sr-only" htmlFor={compact ? "cta-email" : "hero-email"}>E-Mail-Adresse</label>
+      <input
+        id={compact ? "cta-email" : "hero-email"}
+        type="email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        placeholder="deine@email.de"
+        autoComplete="email"
+        required
+      />
+      <button type="submit">Frühzugang sichern <span aria-hidden="true">→</span></button>
+    </form>
+  );
+}
+
+function AppPreview() {
+  return (
+    <div className="preview-wrap" aria-label="Vorschau der Mezax App">
+      <div className="preview-glow" />
+      <div className="phone">
+        <div className="phone__island" />
+        <div className="phone__screen">
+          <div className="phone__top"><BrandMark compact /><span>Mezax</span><i /></div>
+          <div className="phone__eyebrow">WOHNUNGSBEWERBUNG</div>
+          <h3>Deine Unterlagen</h3>
+          <div className="score-card">
+            <div className="score-ring"><span>84</span><small>/100</small></div>
+            <div><strong>Datenschutz-Score</strong><p>2 Empfehlungen offen</p></div>
+          </div>
+          <div className="document-card">
+            <span className="document-icon">▤</span>
+            <div><strong>Gehaltsabrechnung</strong><small>3 sensible Angaben erkannt</small></div>
+            <b>›</b>
+          </div>
+          <div className="finding-card">
+            <div className="finding-card__top"><span>Empfohlen</span><small>Steuer-ID</small></div>
+            <p>Für eine Wohnungsbewerbung normalerweise nicht erforderlich.</p>
+            <div className="finding-card__action">Schwärzung ausgewählt <span>✓</span></div>
+          </div>
+          <button className="phone__button" type="button">Empfehlungen prüfen</button>
+        </div>
+      </div>
+      <div className="floating-badge floating-badge--top"><span>✓</span><div><strong>Lokal geprüft</strong><small>Dokumente geschützt</small></div></div>
+      <div className="floating-badge floating-badge--bottom"><span>3</span><div><strong>Angaben erkannt</strong><small>Du behältst die Kontrolle</small></div></div>
+    </div>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <div className="mezax-landing">
+      <header className="site-header">
+        <a className="brand" href="#top" aria-label="Mezax Startseite"><BrandMark compact /><span>Mezax</span></a>
+        <nav aria-label="Hauptnavigation">
+          <a href="#how">So funktioniert's</a>
+          <a href="#benefits">Vorteile</a>
+          <a className="nav-cta" href="#waitlist">Frühzugang</a>
+        </nav>
+      </header>
+
+      <main>
+        <section className="hero" id="top">
+          <div className="hero__content">
+            <div className="eyebrow"><span /> BALD VERFÜGBAR · MADE FOR GERMANY</div>
+            <h1>Deine Wohnungsbewerbung.<br/><em>Sicher vorbereitet.</em></h1>
+            <p className="hero__lead">Mezax erkennt sensible Daten, erklärt jede Empfehlung und erstellt eine professionelle, datenschutzfreundliche Bewerbungsmappe.</p>
+            <WaitlistForm />
+            <div className="trust-row">
+              <span>✓ Keine Kreditkarte</span>
+              <span>✓ Unverbindlicher Frühzugang</span>
+              <span>✓ Du entscheidest</span>
+            </div>
+          </div>
+          <AppPreview />
+        </section>
+
+        <section className="proof-strip" aria-label="Mezax Prinzipien">
+          <p>PRIVATSPHÄRE ZUERST</p><span />
+          <p>VERSTÄNDLICHE EMPFEHLUNGEN</p><span />
+          <p>SICHERER EXPORT</p><span />
+          <p>VOLLE KONTROLLE</p>
+        </section>
+
+        <section className="section how" id="how">
+          <div className="section-heading">
+            <span className="section-kicker">SO FUNKTIONIERT MEZAX</span>
+            <h2>Von deinen Unterlagen zur<br/>sicheren Bewerbungsmappe.</h2>
+            <p>Ein klarer Ablauf, der dir komplizierte Entscheidungen abnimmt – ohne dir die Kontrolle zu nehmen.</p>
+          </div>
+          <div className="steps">
+            {steps.map((step) => <article className="step-card" key={step.number}><span className="step-card__number">{step.number}</span><h3>{step.title}</h3><p>{step.text}</p></article>)}
+          </div>
+        </section>
+
+        <section className="section benefits" id="benefits">
+          <div className="benefits__intro">
+            <span className="section-kicker">WARUM MEZAX?</span>
+            <h2>Mezax schützt nicht alles.<br/><em>Mezax schützt das Richtige.</em></h2>
+            <p>Normale PDF-Programme geben dir Werkzeuge. Mezax hilft dir dabei, die passende Entscheidung für deine Wohnungsbewerbung zu treffen.</p>
+          </div>
+          <div className="benefit-grid">
+            {benefits.map((benefit) => <article className="benefit-card" key={benefit.title}><span className="benefit-card__icon"><Icon name={benefit.icon}/></span><h3>{benefit.title}</h3><p>{benefit.text}</p></article>)}
+          </div>
+        </section>
+
+        <section className="control-section">
+          <div className="control-visual">
+            <div className="control-document"><span>GEHALTSABRECHNUNG</span><i/><i/><i/><div className="redaction redaction--one">STEUER-ID</div><i/><div className="redaction redaction--two">SV-NUMMER</div><i/></div>
+            <div className="control-check">✓</div>
+          </div>
+          <div className="control-copy">
+            <span className="section-kicker">DU BEHÄLTST DIE KONTROLLE</span>
+            <h2>Mezax schlägt vor.<br/>Du entscheidest.</h2>
+            <p>Jede gefundene Angabe wird verständlich erklärt. Du kannst Vorschläge einzeln bestätigen, abwählen oder zurücksetzen, bevor eine geschützte Datei entsteht.</p>
+            <ul><li><span>✓</span> Originaldateien bleiben unverändert</li><li><span>✓</span> Jede Empfehlung ist nachvollziehbar</li><li><span>✓</span> Kontrolle vor dem endgültigen Export</li></ul>
+          </div>
+        </section>
+
+        <section className="final-cta" id="waitlist">
+          <div className="final-cta__mark"><BrandMark /></div>
+          <span className="section-kicker">SEI VON ANFANG AN DABEI</span>
+          <h2>Bereit für eine sicherere<br/>Wohnungsbewerbung?</h2>
+          <p>Trag dich unverbindlich ein und erfahre als Erstes, wenn Mezax für die ersten Testnutzer bereit ist.</p>
+          <WaitlistForm compact />
+          <small>Kein Spam. Nur wichtige Updates zum Start von Mezax.</small>
+        </section>
+      </main>
+
+      <footer className="site-footer">
+        <a className="brand" href="#top"><BrandMark compact /><span>Mezax</span></a>
+        <p>Teile Dokumente. Nicht deine Daten.</p>
+        <div><a href="#privacy">Datenschutz</a><a href="#legal">Impressum</a><span>© {new Date().getFullYear()} Mezax</span></div>
+      </footer>
+    </div>
+  );
+}

@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import './styles.css';
+import LandingPage from './landing/LandingPage';
 import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
 import { findIdentityDocumentNumber, findLabeledIdentityDocumentNumber, findValidIbans, isMachineReadableZoneLine, shouldDetectGermanTaxId, shouldDetectSocialSecurityNumber } from './ai/sensitiveValidators';
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
@@ -1134,4 +1135,8 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+const showLandingPage = window.location.pathname === '/landing';
+
+createRoot(document.getElementById('root')!).render(
+  showLandingPage ? <LandingPage /> : <App />
+);

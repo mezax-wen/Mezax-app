@@ -16,4 +16,16 @@ if (protectedScore !== 100 || exposedScore >= protectedScore) {
   throw new Error('Der Datenschutz-Score reagiert nicht korrekt auf eine offene Steuer-ID.');
 }
 
+
+const duplicateMrzScore = calculateRentalPrivacyScore([
+  { label: 'Maschinenlesbare Zone (MRZ)', selected: false },
+  { label: 'Maschinenlesbare Zone (MRZ)', selected: false },
+]);
+const singleMrzScore = calculateRentalPrivacyScore([
+  { label: 'Maschinenlesbare Zone (MRZ)', selected: false },
+]);
+if (duplicateMrzScore !== singleMrzScore) {
+  throw new Error('Mehrere MRZ-Zeilen duerfen den Datenschutz-Score nicht mehrfach belasten.');
+}
+
 console.info('Privacy Recommendations: Regeln und Score erfolgreich geprüft.');

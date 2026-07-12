@@ -64,7 +64,16 @@ export function calculateRentalPrivacyScore(
 ) {
   if (!detections.length) return 100;
 
-  const outstandingRisk = detections.reduce((risk, detection) => {
+  const groupedDetections = new Map<string, { label: string; selected: boolean }>();
+  for (const detection of detections) {
+    const existing = groupedDetections.get(detection.label);
+    groupedDetections.set(detection.label, {
+      label: detection.label,
+      selected: existing ? existing.selected && detection.selected : detection.selected,
+    });
+  }
+
+  const outstandingRisk = [...groupedDetections.values()].reduce((risk, detection) => {
     const recommendation = getRentalPrivacyRecommendation(detection.label);
     if (recommendation.action !== 'redact' || detection.selected) return risk;
     return risk + (recommendation.level === 'high' ? 22 : 12);

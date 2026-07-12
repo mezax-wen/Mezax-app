@@ -557,6 +557,25 @@ function App() {
     setConfirmingExport(null);
   }
 
+  function toggleDetectionGroup(docId: number, detectionIds: string[]) {
+    setScans((current) => {
+      const groupIds = new Set(detectionIds);
+      const groupedDetections = current[docId].detections.filter((detection) => groupIds.has(detection.id));
+      const allSelected = groupedDetections.every((detection) => detection.selected);
+      return {
+        ...current,
+        [docId]: {
+          ...current[docId],
+          detections: current[docId].detections.map((detection) =>
+            groupIds.has(detection.id) ? { ...detection, selected: !allSelected } : detection,
+          ),
+        },
+      };
+    });
+    setRedactionsApplied((current) => ({ ...current, [docId]: false }));
+    setConfirmingExport(null);
+  }
+
   async function downloadRedacted(doc: Doc, scan: ScanResult) {
     const image = new Image();
     image.src = doc.url;
@@ -767,6 +786,19 @@ function App() {
     const privacyScore = calculateRentalPrivacyScore(scan.detections);
     const manualBox = manualDraft ? createManualBox(manualDraft.start, manualDraft.end, 0) : null;
     const assignmentReview = reviewDocumentAssignment(preview.slot, scan.classification);
+    const reviewGroups = scan.detections.reduce<Array<{ key: string; detections: Detection[] }>>((groups, detection) => {
+      if (detection.label === 'Maschinenlesbare Zone (MRZ)') {
+        const existingGroup = groups.find((group) => group.key === 'mrz');
+        if (existingGroup) {
+          existingGroup.detections.push(detection);
+          return groups;
+        }
+        groups.push({ key: 'mrz', detections: [detection] });
+        return groups;
+      }
+      groups.push({ key: detection.id, detections: [detection] });
+      return groups;
+    }, []);
 
     return (
       <div className="previewOverlay">
@@ -839,7 +871,7 @@ function App() {
               <div className="scanSummary">
                 <ShieldCheck />
                 <div>
-                  <b>{scan.detections.length ? `${scan.detections.length} Vorschlag/Vorschläge` : 'Keine eindeutigen Treffer'}</b>
+                  <b>{reviewGroups.length ? reviewGroups.length + ' Empfehlung(en)' : 'Keine eindeutigen Treffer'}</b>
                   <small>{scan.detections.length ? 'Tippe auf einen Treffer, um ihn an- oder abzuwählen.' : 'Das Dokument muss trotzdem visuell geprüft werden.'}</small>
                 </div>
               </div>
@@ -885,12 +917,23 @@ function App() {
 
               {scan.detections.length > 0 && (
                 <div className="detectionList">
-                  {scan.detections.map((detection) => (
-                    <button key={detection.id} onClick={() => toggleDetection(preview.id, detection.id)}>
-                      <span className={detection.selected ? 'tick selected' : 'tick'}>{detection.selected && <Check />}</span>
-                      <span><b>{detection.label} · {getRentalPrivacyRecommendation(detection.label, scan.classification?.type).title}</b><small>{getRentalPrivacyRecommendation(detection.label, scan.classification?.type).reason}</small><small>{maskedValue(detection.value)} · OCR {detection.confidence}%</small></span>
-                    </button>
-                  ))}
+                  {reviewGroups.map((group) => {
+                    const detection = group.detections[0];
+                    const allSelected = group.detections.every((item) => item.selected);
+                    const someSelected = group.detections.some((item) => item.selected);
+                    const averageConfidence = Math.round(
+                      group.detections.reduce((sum, item) => sum + item.confidence, 0) / group.detections.length,
+                    );
+                    const detail = group.detections.length > 1
+                      ? group.detections.length + ' erkannte Zeilen - OCR durchschnittlich ' + averageConfidence + '%'
+                      : maskedValue(detection.value) + ' - OCR ' + detection.confidence + '%';
+                    return (
+                      <button key={group.key} onClick={() => toggleDetectionGroup(preview.id, group.detections.map((item) => item.id))}>
+                        <span className={someSelected ? 'tick selected' : 'tick'}>{allSelected ? <Check /> : someSelected ? '-' : null}</span>
+                        <span><b>{detection.label} - {getRentalPrivacyRecommendation(detection.label, scan.classification?.type).title}</b><small>{getRentalPrivacyRecommendation(detection.label, scan.classification?.type).reason}</small><small>{detail}</small></span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 

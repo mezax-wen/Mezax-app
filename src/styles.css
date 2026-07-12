@@ -46,20 +46,16 @@
 .mezaxWordmark{display:block;object-fit:contain}
 .splashWordmark{width:330px;height:auto;animation:wordEnter .5s .45s ease-out both}
 .welcomeWordmark{width:245px;height:auto;margin:8px auto 2px}
-/* Mezax Soft Slate theme */
-:root{background:#dfe6e7}
-body{background:linear-gradient(180deg,#dce4e5,#e8edef)}
-.app{background:#f1f4f4;color:#102129}
-header{background:#e9eeeeeb;border-bottom-color:#d5dede;backdrop-filter:blur(14px)}
-.content{background:transparent}
-.card,.info,.score,.list>div,.recommendedList>label.recommendedDoc{background:#f8fafa;border-color:#d8e1e1;box-shadow:0 8px 22px #1731390b}
-input{background:#f8fafa;border-color:#d2dddd}
-.drop{background:#e8eeee;border-color:#91a7aa}
-footer{background:linear-gradient(transparent,#f1f4f4 30%)}
+
+/* Exact Mezax brand lockup */
+.brandLockup{display:block;width:100%;height:auto;object-fit:contain}
+.brandLockupWrap{position:relative}
+.splashBrand{width:400px;max-width:94vw;animation:splashEnter .75s cubic-bezier(.2,.75,.2,1) both;filter:drop-shadow(0 0 18px #21f4ee33)}
+.welcomeBrand{width:340px;max-width:96%;margin:0 auto -4px}
+.splashBrand .fingerprintSweep{inset:5% 18% 25%}
+
+/* Darker bottom navigation; original light app background retained */
 nav{background:#10242b;border-top-color:#1d3840;box-shadow:0 -10px 30px #0a1a2026}
 nav button{color:#8da2a8}
 nav button.active{color:#36e1c0;background:#173139}
 nav button.active small{font-weight:800}
-nav svg{stroke-width:2.1}
-.avatar{background:#dcebe7}
-.folderProgress{background:#e5efec;border-color:#cadbd6}

@@ -918,11 +918,10 @@ function App() {
   if (showSplash) {
     return (
       <main className="app splash" aria-label="Mezax wird gestartet">
-        <div className="splashMark">
-          <Logo />
+        <div className="brandLockupWrap splashBrand">
+          <img className="brandLockup" src="/mezax-brand-lockup.png" alt="MEZAX" />
           <span className="fingerprintSweep" aria-hidden="true" />
         </div>
-        <img className="mezaxWordmark splashWordmark" src="/mezax-wordmark.png" alt="MEZAX" />
         <p>Teile Dokumente. <span>Nicht deine Daten.</span></p>
       </main>
     );

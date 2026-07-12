@@ -29,6 +29,12 @@ const rentalRules: Record<string, Omit<PrivacyRecommendation, 'disclaimer'>> = {
     title: 'Schwärzen empfohlen',
     reason: 'Zur Identitätsprüfung genügt regelmäßig das Vorzeigen; eine sichtbare Dokumentnummer ist meist nicht nötig.',
   },
+  'Maschinenlesbare Zone (MRZ)': {
+    action: 'redact',
+    level: 'high',
+    title: 'Schwärzen empfohlen',
+    reason: 'Die maschinenlesbare Zone enthält gebündelte Identitätsdaten und sollte bei einer Wohnungsbewerbung nicht sichtbar mitgesendet werden.',
+  },
   IBAN: {
     action: 'redact',
     level: 'medium',

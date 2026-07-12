@@ -61,11 +61,14 @@ const rules: ClassificationRule[] = [
   {
     type: 'Identitätsnachweis',
     keywords: [
-      { label: 'Personalausweis', pattern: /\bPERSONALAUSWEIS\b/, weight: 5 },
-      { label: 'Reisepass', pattern: /\bREISEPASS\b/, weight: 5 },
-      { label: 'Identity Card', pattern: /\bIDENTITY CARD\b/, weight: 4 },
-      { label: 'Dokumentennummer', pattern: /\b(?:DOKUMENTEN|AUSWEIS)NUMMER\b/, weight: 2 },
-      { label: 'Staatsangehörigkeit', pattern: /\bSTAATSANGEH[OÖ]RIGKEIT\b/, weight: 1 },
+      { label: 'Personalausweis', pattern: /\bPERS[O0]NAL\s*[- ]?\s*AUSWEIS\b/, weight: 5 },
+      { label: 'Reisepass/Passport', pattern: /\b(?:REISEPASS|PASSPORT)\b/, weight: 5 },
+      { label: 'Identity Card', pattern: /\bIDENTITY\s*CARD\b/, weight: 4 },
+      { label: 'Dokumentennummer', pattern: /\b(?:DOKUMENT(?:EN)?|AUSWEIS)\s*(?:NUMMER|NR)\b|\bDOCUMENT\s*(?:NUMBER|NO)\b/, weight: 2 },
+      { label: 'Bundesrepublik Deutschland', pattern: /\bBUNDESREPUBLIK\s+DEUTSCHLAND\b/, weight: 2 },
+      { label: 'Staatsangehörigkeit', pattern: /\bSTAATSANGEH[OÖ]RIGKEIT\b|\bNATIONALITY\b/, weight: 1 },
+      { label: 'Geburtsdatum', pattern: /\bGEBURTSDATUM\b|\bDATE\s+OF\s+BIRTH\b/, weight: 1 },
+      { label: 'MRZ-Ausweiszeile', pattern: /\bI[D0]D\s*<+/, weight: 3 },
     ],
   },
   {

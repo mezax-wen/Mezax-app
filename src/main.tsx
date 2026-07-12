@@ -28,6 +28,7 @@ import './styles.css';
 import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
 import { folderCompleteness, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
+import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 
 type Screen = 'welcome' | 'dashboard' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
@@ -313,10 +314,13 @@ function App() {
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
   const [exportingFolder, setExportingFolder] = useState(false);
+  const [batchScanning, setBatchScanning] = useState(false);
 
   const completeness = useMemo(() => folderCompleteness(docs), [docs]);
   const completedRequired = completeness.completed;
   const completion = completeness.percent;
+
+  const batchProgress = useMemo(() => batchScanProgress(docs.map((doc) => doc.id), scans), [docs, scans]);
 
   const findings = useMemo(() => {
     const all = Object.values(scans).flatMap((scan) => scan.detections.filter((item) => item.selected));
@@ -455,6 +459,21 @@ function App() {
       }));
     } finally {
       if (worker) await worker.terminate();
+    }
+  }
+
+  async function scanAllDocuments() {
+    const pendingIds = pendingDocumentIds(docs.map((doc) => doc.id), scans);
+    if (!pendingIds.length) return;
+
+    setBatchScanning(true);
+    try {
+      for (const id of pendingIds) {
+        const doc = docs.find((item) => item.id === id);
+        if (doc) await scanDocument(doc);
+      }
+    } finally {
+      setBatchScanning(false);
     }
   }
 
@@ -941,21 +960,31 @@ function App() {
   }
 
   if (screen === 'check') {
-    const completed = Object.values(scans).filter((scan) => scan.status === 'done').length;
+    const allCompleted = docs.length > 0 && batchProgress.completed === docs.length;
     return (
       <main className="app">
         <Header name="Mezax Check" back="documents" />
         <section className="content center">
           <div className="ring"><Logo /></div>
-          <h2>Deine Unterlagen</h2>
-          <p className="muted">{completed} von {docs.length} Dokument(en) wurden automatisch geprüft.</p>
+          <h2>{allCompleted ? 'Prüfung abgeschlossen' : 'Unterlagen automatisch prüfen'}</h2>
+          <p className="muted">{batchProgress.completed} von {batchProgress.total} Dokument(en) wurden lokal geprüft.</p>
+          <div className="folderProgress batchProgress">
+            <div><b>{batchProgress.percent}% geprüft</b><small>{batchScanning ? 'Mezax arbeitet Dokument für Dokument' : 'Bereit'}</small></div>
+            <div className="progressTrack"><span style={{ width: `${batchProgress.percent}%` }} /></div>
+          </div>
           <div className="analysis">
             <div><Check /> Dokumente hinzugefügt</div>
-            <div><Check /> Bildvorschau verfügbar</div>
-            <div className={completed ? '' : 'pending'}>{completed ? <Check /> : <i />} Automatische Bildprüfung</div>
-            <div className="pending"><i /> PDF-Prüfung folgt</div>
+            <div><Check /> Bilder und PDFs bleiben lokal</div>
+            <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} OCR und Dokumenttyp-Erkennung</div>
+            <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} Datenschutzempfehlungen vorbereitet</div>
           </div>
-          <button className="primary" onClick={() => setScreen('result')}>Ergebnis anzeigen</button>
+          {allCompleted ? (
+            <button className="primary" onClick={() => setScreen('result')}>Ergebnis anzeigen</button>
+          ) : (
+            <button className="primary" disabled={batchScanning} onClick={scanAllDocuments}>
+              {batchScanning ? <><LoaderCircle className="spin" /> Prüfung läuft …</> : <><ScanSearch /> Alle Dokumente prüfen</>}
+            </button>
+          )}
         </section>
       </main>
     );

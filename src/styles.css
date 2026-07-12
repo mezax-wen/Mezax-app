@@ -42,3 +42,4 @@ nav button.active{color:#36e1c0;background:#173139}
 nav button.active small{font-weight:800}
 .startBrand{display:block;width:360px;max-width:100%;height:auto;margin:-22px auto -10px;object-fit:contain;image-rendering:auto;mix-blend-mode:lighten}
 .welcome{background:radial-gradient(circle at 50% 12%,#053237 0,#032329 42%,#000a10 72%,#000408 100%)}
+.assignmentWarning>div{flex:1}.assignmentWarning p{margin:0}.assignmentCorrection{margin-top:10px!important;border-color:#e0c47f;color:#72500b;background:#fffdf7}

@@ -345,6 +345,11 @@ function App() {
     });
   }
 
+  function correctDocumentAssignment(docId: number, slot: RequiredDocument) {
+    setDocs((current) => current.map((doc) => doc.id === docId ? { ...doc, slot } : doc));
+    setPreview((current) => current?.id === docId ? { ...current, slot } : current);
+  }
+
   async function scanDocument(doc: Doc) {
     const isImage = doc.type.startsWith('image/');
     const isPdf = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
@@ -841,7 +846,14 @@ function App() {
               {assignmentReview.status === 'mismatch' && (
                 <div className="warning assignmentWarning">
                   <AlertTriangle />
-                  <p><b>Möglicherweise falsch zugeordnet</b><br />{assignmentReview.message}</p>
+                  <div>
+                    <p><b>Möglicherweise falsch zugeordnet</b><br />{assignmentReview.message}</p>
+                    {assignmentReview.detectedSlot && (
+                      <button className="secondary compact assignmentCorrection" onClick={() => correctDocumentAssignment(preview.id, assignmentReview.detectedSlot!)}>
+                        Als „{assignmentReview.detectedSlot}“ einordnen
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 

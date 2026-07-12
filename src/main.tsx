@@ -919,7 +919,7 @@ function App() {
     return (
       <main className="app welcome">
         <section>
-          <img className="startBrand" src="/mezax-start-teal.png" width="1570" height="1001" alt="MEZAX – Teile Dokumente. Nicht deine Daten." />
+          <img className="startBrand" src="/mezax-start-teal.png?v=final-dark" width="1570" height="1001" alt="MEZAX – Teile Dokumente. Nicht deine Daten." />
         </section>
         <div className="trust">
           <div><ShieldCheck /><p><b>Datenschutz zuerst</b><small>Sensible Daten werden geprüft.</small></p></div>

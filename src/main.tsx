@@ -300,6 +300,7 @@ function App() {
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
+  const [confirmingExport, setConfirmingExport] = useState<number | null>(null);
   const [exportingFolder, setExportingFolder] = useState(false);
   const [batchScanning, setBatchScanning] = useState(false);
   const [manualMode, setManualMode] = useState(false);
@@ -469,6 +470,7 @@ function App() {
   function openPreview(doc: Doc) {
     setManualMode(false);
     setManualDraft(null);
+    setConfirmingExport(null);
     setPreview(doc);
     const supported = doc.type.startsWith('image/') || doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
     if (supported && !scans[doc.id]) {
@@ -524,6 +526,7 @@ function App() {
       },
     }));
     setRedactionsApplied((current) => ({ ...current, [docId]: false }));
+    setConfirmingExport(null);
   }
 
   function toggleDetection(docId: number, detectionId: string) {
@@ -537,6 +540,7 @@ function App() {
       },
     }));
     setRedactionsApplied((current) => ({ ...current, [docId]: false }));
+    setConfirmingExport(null);
   }
 
   async function downloadRedacted(doc: Doc, scan: ScanResult) {
@@ -870,15 +874,33 @@ function App() {
               )}
 
               {selectedCount > 0 && !applied && (
-                <button className="primary" onClick={() => setRedactionsApplied((current) => ({ ...current, [preview.id]: true }))}>
+                <button className="primary" onClick={() => { setRedactionsApplied((current) => ({ ...current, [preview.id]: true })); setConfirmingExport(null); }}>
                   <WandSparkles /> {selectedCount} Schwärzung(en) anwenden
                 </button>
               )}
 
-              {selectedCount > 0 && applied && (
-                <button className="primary" onClick={() => isPdf ? downloadRedactedPdf(preview, scan) : downloadRedacted(preview, scan)}>
-                  <Download /> Geschützte {isPdf ? 'PDF' : 'Kopie'} speichern
-                </button>
+              {selectedCount > 0 && applied && confirmingExport !== preview.id && (
+                <div className="redactionActions">
+                  <button className="secondary compact" onClick={() => { setRedactionsApplied((current) => ({ ...current, [preview.id]: false })); setConfirmingExport(null); }}>
+                    <ArrowLeft /> Auswahl weiter bearbeiten
+                  </button>
+                  <button className="primary" onClick={() => setConfirmingExport(preview.id)}>
+                    <Download /> Geschützte {isPdf ? 'PDF' : 'Kopie'} speichern
+                  </button>
+                </div>
+              )}
+
+              {selectedCount > 0 && applied && confirmingExport === preview.id && (
+                <div className="exportConfirmation">
+                  <div className="warning">
+                    <LockKeyhole />
+                    <p><b>Endgültige geschützte Kopie erstellen?</b><br />In der exportierten Datei können die Schwärzungen nicht rückgängig gemacht werden. Das Original bleibt unverändert.</p>
+                  </div>
+                  <button className="secondary compact" onClick={() => setConfirmingExport(null)}>Abbrechen</button>
+                  <button className="primary" onClick={() => { setConfirmingExport(null); void (isPdf ? downloadRedactedPdf(preview, scan) : downloadRedacted(preview, scan)); }}>
+                    <Download /> Endgültig exportieren
+                  </button>
+                </div>
               )}
             </>
           )}

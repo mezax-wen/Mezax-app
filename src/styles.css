@@ -22,3 +22,5 @@
 .imageStage.manualMode{touch-action:none;cursor:crosshair;user-select:none}.imageStage.manualMode .redactionBox{pointer-events:none}.manualDraftBox{position:absolute;border:2px solid #31d59b;background:#31d59b38;border-radius:3px;pointer-events:none}.manualHint{display:block;color:#b8c8d5;line-height:1.4;margin:8px 2px 12px}.previewPanel .manualActive{background:#dff8ee;border-color:#31d59b;color:#086b4d}
 
 .assignmentWarning{align-items:flex-start}.assignmentWarning svg{flex:0 0 auto;color:#c77b00}.assignmentMismatch{color:#a85f00!important;font-weight:700;line-height:1.35}
+
+.redactionActions,.exportConfirmation{display:grid;gap:10px;margin-top:12px}.redactionActions .primary,.exportConfirmation .primary{margin-top:0}.exportConfirmation .warning{margin-top:0}.exportConfirmation .secondary{margin-top:0}

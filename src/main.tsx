@@ -509,7 +509,8 @@ function App() {
 
   function updateManualRedaction(event: React.PointerEvent<HTMLDivElement>, scan: ScanResult) {
     if (!manualMode || !manualDraft) return;
-    setManualDraft((current) => current ? { ...current, end: manualPoint(event, scan) } : null);
+    const point = manualPoint(event, scan);
+    setManualDraft((current) => current ? { ...current, end: point } : null);
   }
 
   function finishManualRedaction(event: React.PointerEvent<HTMLDivElement>, docId: number, scan: ScanResult) {

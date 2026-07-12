@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
+import { findValidIbans, shouldDetectGermanTaxId, shouldDetectSocialSecurityNumber } from './ai/sensitiveValidators';
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
 import { folderCompleteness, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
@@ -209,25 +210,20 @@ function detectSensitiveData(words: WordBox[]): Detection[] {
         .map((range) => range.word);
     }
 
-    const patterns = [
-      { label: 'IBAN', regex: /[A-Z]{2}\d{2}[A-Z0-9]{11,30}/g },
-      { label: 'Sozialversicherungsnummer', regex: /\d{8}[A-Z]\d{3}/g },
-    ];
-
-    for (const pattern of patterns) {
-      for (const match of compact.matchAll(pattern.regex)) {
-        const start = match.index ?? 0;
-        addDetection(pattern.label, match[0], wordsForRange(start, start + match[0].length));
-      }
+    for (const match of findValidIbans(compact)) {
+      addDetection('IBAN', match.value, wordsForRange(match.index, match.index + match.value.length));
     }
 
-    const taxContext = /STEUER|IDENTIFIKATION|IDNR|TIN/.test(compact);
-    for (const match of compact.matchAll(/\d{11}/g)) {
+    for (const match of compact.matchAll(/\d{8}[A-Z]\d{3}/g)) {
+      if (!shouldDetectSocialSecurityNumber(compact, match[0])) continue;
       const start = match.index ?? 0;
-      const matchedWords = wordsForRange(start, start + match[0].length);
-      if (taxContext || matchedWords.length >= 2) {
-        addDetection('Steuer-ID', match[0], matchedWords);
-      }
+      addDetection('Sozialversicherungsnummer', match[0], wordsForRange(start, start + match[0].length));
+    }
+
+    for (const match of compact.matchAll(/\d{11}/g)) {
+      if (!shouldDetectGermanTaxId(compact, match[0])) continue;
+      const start = match.index ?? 0;
+      addDetection('Steuer-ID', match[0], wordsForRange(start, start + match[0].length));
     }
 
     const idLabel = /(AUSWEISNUMMER|DOKUMENTENNUMMER|DOCUMENTNUMBER|DOCUMENTNO)/.exec(compact);

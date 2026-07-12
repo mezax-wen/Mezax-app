@@ -31,6 +31,7 @@ import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './a
 import { folderCompleteness, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
+import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 
 type Screen = 'welcome' | 'dashboard' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
@@ -85,17 +86,6 @@ type ScanResult = {
 };
 
 const required = requiredDocumentOrder;
-
-function slotForClassification(type: DocumentClassification['type']): RequiredDocument | undefined {
-  const slots: Partial<Record<DocumentClassification['type'], RequiredDocument>> = {
-    Anschreiben: 'Anschreiben',
-    Mieterselbstauskunft: 'Mieterselbstauskunft',
-    Gehaltsabrechnung: 'Gehaltsnachweise',
-    'SCHUFA-Auskunft': 'SCHUFA-Auskunft',
-    Identitätsnachweis: 'Ausweiskopie',
-  };
-  return slots[type];
-}
 
 const emptyScan: ScanResult = {
   status: 'idle',
@@ -758,6 +748,7 @@ function App() {
     const selectedCount = scan.detections.filter((item) => item.selected).length;
     const privacyScore = calculateRentalPrivacyScore(scan.detections);
     const manualBox = manualDraft ? createManualBox(manualDraft.start, manualDraft.end, 0) : null;
+    const assignmentReview = reviewDocumentAssignment(preview.slot, scan.classification);
 
     return (
       <div className="previewOverlay">
@@ -842,6 +833,13 @@ function App() {
                     <b>{scan.classification.type} · {scan.classification.confidence}% sicher erkannt</b>
                     <small>{scan.classification.explanation}</small>
                   </p>
+                </div>
+              )}
+
+              {assignmentReview.status === 'mismatch' && (
+                <div className="warning assignmentWarning">
+                  <AlertTriangle />
+                  <p><b>Möglicherweise falsch zugeordnet</b><br />{assignmentReview.message}</p>
                 </div>
               )}
 
@@ -996,6 +994,7 @@ function App() {
               <div className="list">
                 {docs.map((doc) => {
                   const scan = scans[doc.id];
+                  const assignmentReview = reviewDocumentAssignment(doc.slot, scan?.classification);
                   return (
                     <div key={doc.id}>
                       <FileText />
@@ -1003,6 +1002,7 @@ function App() {
                         <b>{doc.name}</b>
                         <small>{doc.slot ? `${doc.slot} · ` : ''}</small>
                         <small>{(doc.size / 1048576).toFixed(2)} MB{scan?.status === 'done' ? ` · ${scan.classification?.type ?? 'Sonstiges'} (${scan.classification?.confidence ?? 0}%) · ${scan.detections.length} Treffer` : ''}</small>
+                        {assignmentReview.status === 'mismatch' && <small className="assignmentMismatch">⚠ {assignmentReview.message}</small>}
                       </span>
                       <button className="openBtn" onClick={() => openPreview(doc)}>Öffnen</button>
                       <button className="icon" onClick={() => removeDoc(doc.id)} aria-label="Datei entfernen"><X /></button>

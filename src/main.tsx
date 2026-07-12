@@ -29,6 +29,7 @@ import { classifyDocument, type DocumentClassification } from './ai/documentClas
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
 import { folderCompleteness, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
+import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 
 type Screen = 'welcome' | 'dashboard' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
@@ -315,6 +316,8 @@ function App() {
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
   const [exportingFolder, setExportingFolder] = useState(false);
   const [batchScanning, setBatchScanning] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualDraft, setManualDraft] = useState<{ start: DocumentPoint; end: DocumentPoint } | null>(null);
 
   const completeness = useMemo(() => folderCompleteness(docs), [docs]);
   const completedRequired = completeness.completed;
@@ -478,11 +481,62 @@ function App() {
   }
 
   function openPreview(doc: Doc) {
+    setManualMode(false);
+    setManualDraft(null);
     setPreview(doc);
     const supported = doc.type.startsWith('image/') || doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
     if (supported && !scans[doc.id]) {
       window.setTimeout(() => scanDocument(doc), 250);
     }
+  }
+
+  function manualPoint(event: React.PointerEvent<HTMLDivElement>, scan: ScanResult) {
+    return toDocumentPoint(
+      event.clientX,
+      event.clientY,
+      event.currentTarget.getBoundingClientRect(),
+      scan.width,
+      scan.height,
+    );
+  }
+
+  function beginManualRedaction(event: React.PointerEvent<HTMLDivElement>, scan: ScanResult) {
+    if (!manualMode || scan.status !== 'done' || !scan.width || !scan.height) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const point = manualPoint(event, scan);
+    setManualDraft({ start: point, end: point });
+  }
+
+  function updateManualRedaction(event: React.PointerEvent<HTMLDivElement>, scan: ScanResult) {
+    if (!manualMode || !manualDraft) return;
+    setManualDraft((current) => current ? { ...current, end: manualPoint(event, scan) } : null);
+  }
+
+  function finishManualRedaction(event: React.PointerEvent<HTMLDivElement>, docId: number, scan: ScanResult) {
+    if (!manualMode || !manualDraft) return;
+    const box = createManualBox(manualDraft.start, manualPoint(event, scan));
+    setManualDraft(null);
+    if (!box) return;
+
+    const id = `manual-${docId}-${Date.now()}`;
+    setScans((current) => ({
+      ...current,
+      [docId]: {
+        ...current[docId],
+        detections: [
+          ...current[docId].detections,
+          {
+            id,
+            label: 'Manuelle Schwärzung',
+            value: 'Manuell ausgewählt',
+            confidence: 100,
+            selected: true,
+            bbox: box,
+          },
+        ],
+      },
+    }));
+    setRedactionsApplied((current) => ({ ...current, [docId]: false }));
   }
 
   function toggleDetection(docId: number, detectionId: string) {
@@ -706,11 +760,12 @@ function App() {
     const applied = redactionsApplied[preview.id] ?? false;
     const selectedCount = scan.detections.filter((item) => item.selected).length;
     const privacyScore = calculateRentalPrivacyScore(scan.detections);
+    const manualBox = manualDraft ? createManualBox(manualDraft.start, manualDraft.end, 0) : null;
 
     return (
       <div className="previewOverlay">
         <div className="previewTop">
-          <button className="icon" onClick={() => setPreview(null)} aria-label="Vorschau schließen">
+          <button className="icon" onClick={() => { setPreview(null); setManualMode(false); setManualDraft(null); }} aria-label="Vorschau schließen">
             <X />
           </button>
           <div>
@@ -721,8 +776,8 @@ function App() {
 
         <div className="previewBody">
           {(isImage || (isPdf && scan.renderedUrl)) ? (
-            <div className="imageStage">
-              <img src={scan.renderedUrl ?? preview.url} alt={preview.name} />
+            <div className={manualMode ? 'imageStage manualMode' : 'imageStage'} onPointerDown={(event) => beginManualRedaction(event, scan)} onPointerMove={(event) => updateManualRedaction(event, scan)} onPointerUp={(event) => finishManualRedaction(event, preview.id, scan)}>
+              <img src={scan.renderedUrl ?? preview.url} alt={preview.name} draggable={false} />
               {scan.status === 'done' && scan.width > 0 &&
                 scan.detections.map((detection) => (
                   <button
@@ -738,6 +793,9 @@ function App() {
                     aria-label={`${detection.label} ${detection.selected ? 'abwählen' : 'auswählen'}`}
                   />
                 ))}
+              {manualBox && scan.width > 0 && scan.height > 0 && (
+                <div className="manualDraftBox" style={{ left: `${(manualBox.left / scan.width) * 100}%`, top: `${(manualBox.top / scan.height) * 100}%`, width: `${(manualBox.width / scan.width) * 100}%`, height: `${(manualBox.height / scan.height) * 100}%` }} />
+              )}
             </div>
           ) : isPdf ? (
             <div className="pdfRendering"><LoaderCircle className="spin" /><span>PDF wird vorbereitet …</span></div>
@@ -790,6 +848,11 @@ function App() {
                 </div>
               )}
 
+              <button className={manualMode ? 'secondary compact manualActive' : 'secondary compact'} onClick={() => { setManualMode((active) => !active); setManualDraft(null); }}>
+                {manualMode ? <><Check /> Manuelle Auswahl beenden</> : <><Plus /> Fehlende Stelle selbst markieren</>}
+              </button>
+              {manualMode && <small className="manualHint">Ziehe mit Finger oder Maus einen Rahmen über die Information. Kleine versehentliche Berührungen werden ignoriert.</small>}
+
               {scan.detections.length > 0 && (
                 <div className="info">
                   <ShieldCheck />
@@ -831,7 +894,7 @@ function App() {
             </button>
           )}
 
-          <small className="localNote">Die Datei bleibt lokal im Browser. Empfehlungen ersetzen keine rechtliche Beratung und müssen vor dem Export geprüft werden. Beta-Erkennung ohne Garantie.</small>
+          <small className="localNote">Die Datei bleibt lokal im Browser. Automatische und manuelle Schwärzungen müssen vor dem Export geprüft werden. Beta-Erkennung ohne Garantie.</small>
         </div>
       </div>
     );
@@ -851,7 +914,7 @@ function App() {
           <div><LockKeyhole /><p><b>Du entscheidest</b><small>Jeder Vorschlag kann bestätigt oder abgewählt werden.</small></p></div>
         </div>
         <button className="primary" onClick={() => setScreen('dashboard')}>Los geht’s</button>
-        <small className="note">Prototyp v0.5 · Für Tests nur Beispieldokumente verwenden</small>
+        <small className="note">Prototyp v0.6 · Für Tests nur Beispieldokumente verwenden</small>
       </main>
     );
   }

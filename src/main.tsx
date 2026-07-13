@@ -1280,7 +1280,10 @@ function App() {
           <p className="muted">Öffne ein Bild oder PDF: Die automatische Prüfung startet direkt.</p>
           <label className="drop">
             <Upload /><b>Dateien auswählen</b><span>PDF, JPG oder PNG</span>
-            <input hidden multiple type="file" accept=".pdf,image/*" onChange={(event) => addFiles(event.target.files)} />
+            <input className="nativeFileInput" multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
+              addFiles(event.currentTarget.files);
+              event.currentTarget.value = '';
+            }} />
           </label>
           <h3>Empfohlene Unterlagen</h3>
           <div className="folderProgress">
@@ -1293,7 +1296,10 @@ function App() {
               <label className={assigned ? 'recommendedDoc ready' : 'recommendedDoc'} key={item}>
                 <FileText />
                 <span><b>{item}</b><small>{assigned?.name ?? 'Noch nicht hinzugefügt'}</small></span>
-                <input hidden multiple={item === 'Gehaltsnachweise'} type="file" accept=".pdf,image/*" onChange={(event) => addFiles(event.target.files, item)} />
+                <input className="nativeFileInput" multiple={item === 'Gehaltsnachweise'} type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
+                  addFiles(event.currentTarget.files, item);
+                  event.currentTarget.value = '';
+                }} />
                 {assigned ? <Check /> : <Plus />}
               </label>
             );

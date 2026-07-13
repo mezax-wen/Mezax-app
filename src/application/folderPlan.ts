@@ -34,3 +34,10 @@ export function safeFolderFileName(title: string) {
     .slice(0, 60);
   return `Mezax-${safeTitle || 'Wohnungsbewerbung'}.pdf`;
 }
+
+export function rentalWatermark(address: string) {
+  const normalizedAddress = address.trim().replace(/\s+/g, ' ');
+  return normalizedAddress
+    ? 'Nur f\u00fcr Wohnungsbewerbung \u2013 ' + normalizedAddress
+    : 'Nur f\u00fcr diese Wohnungsbewerbung';
+}

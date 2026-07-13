@@ -51,6 +51,7 @@ type PreparedPdf = {
   url: string;
   name: string;
   file: File;
+  downloadUrl?: string;
 };
 
 type WordBox = {
@@ -990,12 +991,27 @@ function App() {
 
       const fileName = safeFolderFileName(title);
       const blob = output.output('blob');
+      let downloadUrl: string | undefined;
+      try {
+        const response = await fetch(`/__mezax-pdf?name=${encodeURIComponent(fileName)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/pdf' },
+          body: blob,
+        });
+        if (response.ok) {
+          const result = await response.json() as { url?: string };
+          downloadUrl = result.url;
+        }
+      } catch {
+        // Der normale Browser-Blob bleibt als Offline-Fallback verfügbar.
+      }
       setPreparedFolder((current) => {
         if (current) URL.revokeObjectURL(current.url);
         return {
           url: URL.createObjectURL(blob),
           name: fileName,
           file: new File([blob], fileName, { type: 'application/pdf' }),
+          downloadUrl,
         };
       });
     } finally {
@@ -1523,16 +1539,16 @@ function App() {
               <Check />
               <span><b>PDF ist bereit</b><small>{preparedFolder.name}</small></span>
             </div>
-            <button className="primary" type="button" onClick={() => window.location.assign(preparedFolder.url)}>
-              <FileText /> PDF im Browser anzeigen
+            <button className="primary" type="button" onClick={() => window.location.assign(preparedFolder.downloadUrl ?? preparedFolder.url)}>
+              <Download /> PDF aufs Handy herunterladen
             </button>
             {typeof navigator.share === 'function' && (
               <button className="secondary" type="button" onClick={sharePreparedFolder}>
                 <Upload /> Teilen oder auf dem Handy speichern
               </button>
             )}
-            <a className="secondary pdfDownloadLink" href={preparedFolder.url} download={preparedFolder.name}>
-              <Download /> Direkt herunterladen
+            <a className="secondary pdfDownloadLink" href={preparedFolder.downloadUrl ?? preparedFolder.url} download={preparedFolder.name}>
+              <FileText /> Alternativen Download öffnen
             </a>
             <small className="preparedPdfHint">Auf iPhone: PDF öffnen, dann „Teilen“ → „In Dateien sichern“. Auf Android findest du sie anschließend unter „Downloads“.</small>
           </div>

@@ -29,7 +29,7 @@ import LandingPage from './landing/LandingPage';
 import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
 import { findIdentityDocumentNumber, findLabeledIdentityDocumentNumber, findValidIbans, isMachineReadableZoneLine, shouldDetectGermanTaxId, shouldDetectSocialSecurityNumber } from './ai/sensitiveValidators';
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
-import { folderCompleteness, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
+import { folderCompleteness, rentalWatermark, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
@@ -301,7 +301,8 @@ function App() {
   const [address, setAddress] = useState('Musterstraße 12, 10115 Berlin');
   const [docs, setDocs] = useState<Doc[]>([]);
   const [preview, setPreview] = useState<Doc | null>(null);
-  const [watermark, setWatermark] = useState('Nur für Wohnungsbewerbung – Musterstraße 12');
+  const [watermark, setWatermark] = useState(() => rentalWatermark(address));
+  const [watermarkCustomized, setWatermarkCustomized] = useState(false);
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
@@ -1036,7 +1037,11 @@ function App() {
           <h2>Für welche Wohnung?</h2>
           <p className="muted">Diese Angaben erscheinen später auf Deckblatt und Wasserzeichen.</p>
           <label>Bezeichnung<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
-          <label>Adresse<input value={address} onChange={(event) => setAddress(event.target.value)} /></label>
+          <label>Adresse<input value={address} onChange={(event) => {
+            const nextAddress = event.target.value;
+            setAddress(nextAddress);
+            if (!watermarkCustomized) setWatermark(rentalWatermark(nextAddress));
+          }} /></label>
           <label>Vermieter / Ansprechpartner<input placeholder="Optional" /></label>
         </section>
         <footer><button className="primary" onClick={() => setScreen('documents')}>Weiter <ChevronRight /></button></footer>
@@ -1150,7 +1155,10 @@ function App() {
               <div key={label}><ShieldCheck /><span><b>{label}</b><small>{count} Fundstelle(n)</small></span><em>Prüfen</em></div>
             )) : <div><AlertTriangle /><span><b>Keine Ergebnisse</b><small>Es wurde noch nichts erkannt oder geprüft.</small></span></div>}
           </div>
-          <label>Wasserzeichen<input value={watermark} onChange={(event) => setWatermark(event.target.value)} /></label>
+          <label>Wasserzeichen<input value={watermark} onChange={(event) => {
+            setWatermark(event.target.value);
+            setWatermarkCustomized(true);
+          }} /></label>
           <div className="warning"><LockKeyhole /><p><b>Beta-Hinweis:</b> Automatische Treffer müssen immer kontrolliert werden. Die aktuelle Exportfunktion erzeugt geschützte PNG-Kopien einzelner Bilder.</p></div>
         </section>
         <footer><button className="primary" onClick={() => { setFixed(true); setScreen('export'); }}>Vorschläge übernehmen</button></footer>

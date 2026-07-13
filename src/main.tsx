@@ -47,6 +47,12 @@ type Doc = {
   slot?: RequiredDocument;
 };
 
+type PreparedPdf = {
+  url: string;
+  name: string;
+  file: File;
+};
+
 type WordBox = {
   text: string;
   normalized: string;
@@ -375,6 +381,7 @@ function App() {
   const [applicantPhone, setApplicantPhone] = useState('');
   const [applicantCurrentAddress, setApplicantCurrentAddress] = useState('');
   const [applicantPhoto, setApplicantPhoto] = useState<{ name: string; url: string } | null>(null);
+  const [preparedFolder, setPreparedFolder] = useState<PreparedPdf | null>(null);
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
@@ -386,6 +393,9 @@ function App() {
   useEffect(() => () => {
     if (applicantPhoto) URL.revokeObjectURL(applicantPhoto.url);
   }, [applicantPhoto]);
+  useEffect(() => () => {
+    if (preparedFolder) URL.revokeObjectURL(preparedFolder.url);
+  }, [preparedFolder]);
   const [confirmingExport, setConfirmingExport] = useState<number | null>(null);
   const [exportingFolder, setExportingFolder] = useState(false);
   const [batchScanning, setBatchScanning] = useState(false);
@@ -981,9 +991,33 @@ function App() {
         }
       }
 
-      output.save(safeFolderFileName(title));
+      const fileName = safeFolderFileName(title);
+      const blob = output.output('blob');
+      setPreparedFolder({
+        url: URL.createObjectURL(blob),
+        name: fileName,
+        file: new File([blob], fileName, { type: 'application/pdf' }),
+      });
     } finally {
       setExportingFolder(false);
+    }
+  }
+
+  async function sharePreparedFolder() {
+    if (!preparedFolder || typeof navigator.share !== 'function') return;
+
+    const shareData: ShareData = {
+      files: [preparedFolder.file],
+      title: 'Mezax Bewerbungsmappe',
+      text: 'Geschützte Bewerbungsmappe',
+    };
+
+    try {
+      if (typeof navigator.canShare === 'function' && !navigator.canShare(shareData)) return;
+      await navigator.share(shareData);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      window.alert('Die PDF konnte nicht über das Teilen-Menü geöffnet werden. Nutze bitte „PDF öffnen“.');
     }
   }
 
@@ -1482,6 +1516,27 @@ function App() {
           <div><Check /> Ausgewählte Schwärzungen fest eingebrannt</div>
           <div><Check /> Originaldateien bleiben unverändert</div>
         </div>
+
+        {preparedFolder && (
+          <div className="preparedPdf" id="prepared-pdf">
+            <div className="preparedPdfTitle">
+              <Check />
+              <span><b>PDF ist bereit</b><small>{preparedFolder.name}</small></span>
+            </div>
+            <a className="primary" href={preparedFolder.url} target="_blank" rel="noopener noreferrer">
+              <FileText /> PDF öffnen
+            </a>
+            {typeof navigator.share === 'function' && (
+              <button className="secondary" type="button" onClick={sharePreparedFolder}>
+                <Upload /> Teilen oder auf dem Handy speichern
+              </button>
+            )}
+            <a className="secondary pdfDownloadLink" href={preparedFolder.url} download={preparedFolder.name}>
+              <Download /> Direkt herunterladen
+            </a>
+            <small className="preparedPdfHint">Auf iPhone: PDF öffnen, dann „Teilen“ → „In Dateien sichern“. Auf Android findest du sie anschließend unter „Downloads“.</small>
+          </div>
+        )}
 
         {includeCover && !applicantName.trim() && (
           <p className="exportValidation">Bitte ergänze den Bewerbernamen, um das Deckblatt zu erstellen.</p>

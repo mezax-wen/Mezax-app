@@ -393,9 +393,6 @@ function App() {
   useEffect(() => () => {
     if (applicantPhoto) URL.revokeObjectURL(applicantPhoto.url);
   }, [applicantPhoto]);
-  useEffect(() => () => {
-    if (preparedFolder) URL.revokeObjectURL(preparedFolder.url);
-  }, [preparedFolder]);
   const [confirmingExport, setConfirmingExport] = useState<number | null>(null);
   const [exportingFolder, setExportingFolder] = useState(false);
   const [batchScanning, setBatchScanning] = useState(false);
@@ -993,10 +990,13 @@ function App() {
 
       const fileName = safeFolderFileName(title);
       const blob = output.output('blob');
-      setPreparedFolder({
-        url: URL.createObjectURL(blob),
-        name: fileName,
-        file: new File([blob], fileName, { type: 'application/pdf' }),
+      setPreparedFolder((current) => {
+        if (current) URL.revokeObjectURL(current.url);
+        return {
+          url: URL.createObjectURL(blob),
+          name: fileName,
+          file: new File([blob], fileName, { type: 'application/pdf' }),
+        };
       });
     } finally {
       setExportingFolder(false);
@@ -1523,9 +1523,9 @@ function App() {
               <Check />
               <span><b>PDF ist bereit</b><small>{preparedFolder.name}</small></span>
             </div>
-            <a className="primary" href={preparedFolder.url} target="_blank" rel="noopener noreferrer">
-              <FileText /> PDF öffnen
-            </a>
+            <button className="primary" type="button" onClick={() => window.location.assign(preparedFolder.url)}>
+              <FileText /> PDF im Browser anzeigen
+            </button>
             {typeof navigator.share === 'function' && (
               <button className="secondary" type="button" onClick={sharePreparedFolder}>
                 <Upload /> Teilen oder auf dem Handy speichern

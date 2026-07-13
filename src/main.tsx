@@ -33,6 +33,7 @@ import { folderCompleteness, rentalWatermark, requiredDocumentOrder, safeFolderF
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
+import { createPdfPagePlan } from './application/pdfPagePlan';
 
 type Screen = 'welcome' | 'dashboard' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
@@ -246,6 +247,68 @@ async function imageSize(url: string) {
   return { width: image.naturalWidth, height: image.naturalHeight };
 }
 
+async function loadBrowserImage(url: string) {
+  const image = new Image();
+  image.src = url;
+  await image.decode();
+  return image;
+}
+
+async function renderSvgAsPng(url: string, width = 520, height = 640) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Mezax-Logo konnte nicht geladen werden.');
+  const objectUrl = URL.createObjectURL(await response.blob());
+
+  try {
+    const image = await loadBrowserImage(objectUrl);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Mezax-Logo konnte nicht vorbereitet werden.');
+    context.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function addCoverPhoto(
+  output: jsPDF,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 480;
+  canvas.height = 600;
+  const context = canvas.getContext('2d');
+  if (!context) return;
+
+  const targetRatio = canvas.width / canvas.height;
+  const sourceRatio = image.naturalWidth / image.naturalHeight;
+  let sourceWidth = image.naturalWidth;
+  let sourceHeight = image.naturalHeight;
+  let sourceX = 0;
+  let sourceY = 0;
+
+  if (sourceRatio > targetRatio) {
+    sourceWidth = image.naturalHeight * targetRatio;
+    sourceX = (image.naturalWidth - sourceWidth) / 2;
+  } else {
+    sourceHeight = image.naturalWidth / targetRatio;
+    sourceY = (image.naturalHeight - sourceHeight) / 2;
+  }
+
+  context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, canvas.width, canvas.height);
+  output.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', x, y, width, height, undefined, 'FAST');
+  output.setDrawColor(18, 174, 181);
+  output.setLineWidth(1.5);
+  output.rect(x, y, width, height);
+}
+
 
 async function renderPdfToComposite(url: string, onProgress?: (page: number, total: number) => void) {
   const loadingTask = getDocument(url);
@@ -303,6 +366,15 @@ function App() {
   const [preview, setPreview] = useState<Doc | null>(null);
   const [watermark, setWatermark] = useState(() => rentalWatermark(address));
   const [watermarkCustomized, setWatermarkCustomized] = useState(false);
+  const [includeCover, setIncludeCover] = useState(true);
+  const [showApplicantPhoto, setShowApplicantPhoto] = useState(true);
+  const [showRentalAddress, setShowRentalAddress] = useState(true);
+  const [showMezaxNotice, setShowMezaxNotice] = useState(true);
+  const [applicantName, setApplicantName] = useState('');
+  const [applicantEmail, setApplicantEmail] = useState('');
+  const [applicantPhone, setApplicantPhone] = useState('');
+  const [applicantCurrentAddress, setApplicantCurrentAddress] = useState('');
+  const [applicantPhoto, setApplicantPhoto] = useState<{ name: string; url: string } | null>(null);
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
@@ -311,6 +383,9 @@ function App() {
     const timer = window.setTimeout(() => setShowSplash(false), 1500);
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => () => {
+    if (applicantPhoto) URL.revokeObjectURL(applicantPhoto.url);
+  }, [applicantPhoto]);
   const [confirmingExport, setConfirmingExport] = useState<number | null>(null);
   const [exportingFolder, setExportingFolder] = useState(false);
   const [batchScanning, setBatchScanning] = useState(false);
@@ -343,6 +418,16 @@ function App() {
         slot,
       })),
     ]);
+  }
+
+  function selectApplicantPhoto(fileList: FileList | null) {
+    const file = fileList?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+
+    setApplicantPhoto((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return { name: file.name, url: URL.createObjectURL(file) };
+    });
   }
 
   function removeDoc(id: number) {
@@ -663,6 +748,10 @@ function App() {
       window.alert('Bitte öffne und prüfe zuerst jedes hinzugefügte Dokument. Ungeprüfte Dateien werden nicht exportiert.');
       return;
     }
+    if (includeCover && !applicantName.trim()) {
+      window.alert('Bitte trage für das Deckblatt den Namen der Bewerberin oder des Bewerbers ein.');
+      return;
+    }
 
     const confirmed = window.confirm(
       'Jetzt wird eine neue, dauerhaft geschwärzte PDF erzeugt. Die Originaldateien bleiben unverändert. Fortfahren?',
@@ -674,44 +763,172 @@ function App() {
       const output = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
       const pageWidth = output.internal.pageSize.getWidth();
       const pageHeight = output.internal.pageSize.getHeight();
+      const pagePlan = createPdfPagePlan(
+        exportable.map((doc) => ({
+          id: doc.id,
+          name: doc.name,
+          pageCount: scans[doc.id]?.pdfPages?.length || 1,
+        })),
+        includeCover,
+      );
+      const planByDocument = new Map(pagePlan.map((entry) => [entry.id, entry]));
 
-      output.setFillColor(7, 21, 40);
-      output.rect(0, 0, pageWidth, pageHeight, 'F');
-      output.setTextColor(32, 197, 139);
-      output.setFontSize(18);
-      output.text('MEZAX', 48, 72);
-      output.setTextColor(255, 255, 255);
-      output.setFontSize(30);
-      output.text('Wohnungsbewerbung', 48, 150);
-      output.setFontSize(18);
-      output.text(title || 'Bewerbungsmappe', 48, 188);
-      output.setTextColor(190, 205, 218);
-      output.setFontSize(12);
-      output.text(address || 'Adresse nicht angegeben', 48, 216);
-      output.text('Datenschutzfreundlich zusammengestellt · Originale bleiben unverändert', 48, pageHeight - 72);
+      if (includeCover) {
+        output.setFillColor(255, 255, 255);
+        output.rect(0, 0, pageWidth, pageHeight, 'F');
+        output.setFillColor(12, 175, 181);
+        output.rect(0, 0, pageWidth, 12, 'F');
+        output.setFillColor(231, 249, 248);
+        output.rect(0, 12, 14, pageHeight - 12, 'F');
 
-      output.addPage('a4', 'portrait');
-      output.setTextColor(15, 23, 42);
-      output.setFontSize(22);
-      output.text('Inhaltsübersicht', 48, 62);
-      output.setFontSize(11);
-      exportable.forEach((doc, index) => {
-        const label = doc.slot ?? 'Sonstige Unterlage';
-        output.text(`${index + 1}. ${label} – ${doc.name}`, 56, 100 + index * 24);
-      });
+        const logoPng = await renderSvgAsPng('/mezax-logo.svg');
+        output.addImage(logoPng, 'PNG', 48, 38, 38, 47, undefined, 'FAST');
+        output.setFont('helvetica', 'bold');
+        output.setTextColor(8, 79, 88);
+        output.setFontSize(17);
+        output.text('MEZAX', 96, 68);
 
-      let exportedPage = 2;
+        output.setTextColor(12, 31, 47);
+        output.setFontSize(29);
+        output.text('Bewerbungsmappe', 48, 126);
+        output.setFont('helvetica', 'normal');
+        output.setTextColor(70, 91, 105);
+        output.setFontSize(14);
+        output.text('für die Wohnungsbewerbung', 48, 151);
+
+        if (showApplicantPhoto && applicantPhoto) {
+          const photoImage = await loadBrowserImage(applicantPhoto.url);
+          addCoverPhoto(output, photoImage, pageWidth - 138, 48, 90, 112);
+        }
+
+        output.setDrawColor(208, 228, 229);
+        output.setLineWidth(0.8);
+        output.line(48, 176, pageWidth - 48, 176);
+
+        output.setFont('helvetica', 'bold');
+        output.setTextColor(12, 175, 181);
+        output.setFontSize(9);
+        output.text('BEWERBERIN / BEWERBER', 48, 199);
+        output.setTextColor(12, 31, 47);
+        output.setFontSize(18);
+        output.text(applicantName.trim(), 48, 222);
+
+        const contactLines = [
+          applicantEmail.trim(),
+          applicantPhone.trim(),
+          applicantCurrentAddress.trim(),
+        ].filter(Boolean);
+        output.setFont('helvetica', 'normal');
+        output.setTextColor(72, 91, 105);
+        output.setFontSize(10);
+        contactLines.forEach((line, index) => {
+          output.text(line, 48, 242 + index * 16, { maxWidth: showApplicantPhoto && applicantPhoto ? 360 : 495 });
+        });
+
+        if (showRentalAddress && address.trim()) {
+          output.setFillColor(239, 250, 249);
+          output.roundedRect(48, 294, pageWidth - 96, 50, 7, 7, 'F');
+          output.setFont('helvetica', 'bold');
+          output.setTextColor(12, 138, 145);
+          output.setFontSize(8);
+          output.text('GEWÜNSCHTE WOHNUNG', 62, 313);
+          output.setFont('helvetica', 'normal');
+          output.setTextColor(22, 51, 64);
+          output.setFontSize(11);
+          output.text(address.trim(), 62, 331, { maxWidth: pageWidth - 124 });
+        }
+
+        const contentsTop = 381;
+        output.setFont('helvetica', 'bold');
+        output.setTextColor(12, 31, 47);
+        output.setFontSize(15);
+        output.text('Inhaltsübersicht', 48, contentsTop);
+        output.setDrawColor(12, 175, 181);
+        output.setLineWidth(2);
+        output.line(48, contentsTop + 10, 115, contentsTop + 10);
+
+        const columnCount = pagePlan.length > 12 ? 2 : 1;
+        const rowsPerColumn = Math.max(1, Math.ceil(pagePlan.length / columnCount));
+        const columnGap = 24;
+        const columnWidth = (pageWidth - 96 - columnGap * (columnCount - 1)) / columnCount;
+        const rowHeight = Math.min(21, 270 / rowsPerColumn);
+        output.setFontSize(rowHeight < 16 ? 7.5 : 9.5);
+
+        const fitText = (value: string, maxWidth: number) => {
+          if (output.getTextWidth(value) <= maxWidth) return value;
+          let shortened = value;
+          while (shortened.length > 4 && output.getTextWidth(shortened + '…') > maxWidth) {
+            shortened = shortened.slice(0, -1);
+          }
+          return shortened + '…';
+        };
+
+        pagePlan.forEach((entry, index) => {
+          const column = Math.floor(index / rowsPerColumn);
+          const row = index % rowsPerColumn;
+          const x = 48 + column * (columnWidth + columnGap);
+          const y = contentsTop + 34 + row * rowHeight;
+          const doc = exportable.find((item) => item.id === entry.id);
+          const documentLabel = doc?.slot ? doc.slot + ' · ' + entry.name : entry.name;
+          const pageNumberWidth = output.getTextWidth(entry.pageLabel);
+          output.setFont('helvetica', 'normal');
+          output.setTextColor(38, 58, 71);
+          output.text(fitText(documentLabel, columnWidth - pageNumberWidth - 18), x, y);
+          output.setDrawColor(210, 224, 226);
+          output.setLineDashPattern([1.5, 2], 0);
+          output.line(x + Math.max(30, columnWidth - pageNumberWidth - 55), y - 2, x + columnWidth - pageNumberWidth - 8, y - 2);
+          output.setLineDashPattern([], 0);
+          output.setFont('helvetica', 'bold');
+          output.setTextColor(12, 138, 145);
+          output.text(entry.pageLabel, x + columnWidth, y, { align: 'right' });
+        });
+
+        if (showMezaxNotice) {
+          output.setFillColor(242, 250, 249);
+          output.roundedRect(48, 712, pageWidth - 96, 46, 7, 7, 'F');
+          output.setFont('helvetica', 'normal');
+          output.setTextColor(57, 79, 91);
+          output.setFontSize(9.5);
+          output.text(
+            'Diese Unterlagen wurden mit Mezax datenschutzfreundlich geprüft und zusammengestellt.',
+            62,
+            731,
+            { maxWidth: pageWidth - 124 },
+          );
+        }
+
+        const createdOn = new Intl.DateTimeFormat('de-DE', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        }).format(new Date());
+        output.setFont('helvetica', 'normal');
+        output.setTextColor(100, 116, 126);
+        output.setFontSize(8.5);
+        output.text('Erstellt am ' + createdOn, 48, 786);
+        output.setFont('helvetica', 'bold');
+        output.setFontSize(10);
+        const sloganPrefix = 'Teile Dokumente. ';
+        const sloganSuffix = 'Nicht deine Daten.';
+        const sloganX = pageWidth - 48 - output.getTextWidth(sloganPrefix + sloganSuffix);
+        output.setTextColor(8, 79, 88);
+        output.text(sloganPrefix, sloganX, 786);
+        output.setTextColor(12, 175, 181);
+        output.text(sloganSuffix, sloganX + output.getTextWidth(sloganPrefix), 786);
+      }
+
+      let hasRenderedPage = includeCover;
       for (const doc of exportable) {
         const scan = scans[doc.id];
-        if (!scan?.renderedUrl) continue;
-        const image = new Image();
-        image.src = scan.renderedUrl;
-        await image.decode();
+        const planEntry = planByDocument.get(doc.id);
+        if (!scan?.renderedUrl || !planEntry) continue;
+        const image = await loadBrowserImage(scan.renderedUrl);
         const pages = scan.pdfPages?.length
           ? scan.pdfPages
           : [{ top: 0, width: scan.width || image.naturalWidth, height: scan.height || image.naturalHeight }];
 
-        for (const page of pages) {
+        for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+          const page = pages[pageIndex];
           const canvas = document.createElement('canvas');
           canvas.width = page.width;
           canvas.height = page.height;
@@ -734,8 +951,8 @@ function App() {
             );
           }
 
-          output.addPage('a4', 'portrait');
-          exportedPage += 1;
+          if (hasRenderedPage) output.addPage('a4', 'portrait');
+          hasRenderedPage = true;
           const margin = 38;
           const ratio = Math.min((pageWidth - margin * 2) / page.width, (pageHeight - 90) / page.height);
           const drawWidth = page.width * ratio;
@@ -754,7 +971,11 @@ function App() {
           output.setFontSize(13);
           output.text(watermark || 'Nur für diese Wohnungsbewerbung', pageWidth / 2, pageHeight / 2, { align: 'center', angle: 45 });
           output.setFontSize(9);
-          output.text(`${doc.slot ?? doc.name} · Seite ${exportedPage}`, 38, pageHeight - 24);
+          output.text(
+            (doc.slot ?? doc.name) + ' · Seite ' + (planEntry.startPage + pageIndex),
+            38,
+            pageHeight - 24,
+          );
         }
       }
 
@@ -1169,21 +1390,110 @@ function App() {
   return (
     <main className="app">
       <Header name="Export" back="result" />
-      <section className="content center">
-        <div className="success"><Check /></div>
-        <h2>Prüfung abgeschlossen</h2>
-        <p className="muted">Erstelle jetzt eine neue, geschützte Gesamt-PDF. Deine Originale bleiben unverändert.</p>
-        <div className="export">
-          <div><Check /> Deckblatt und Inhaltsübersicht</div>
+      <section className="content exportPage">
+        <div className="exportIntro">
+          <div className="success"><Check /></div>
+          <h2>Prüfung abgeschlossen</h2>
+          <p className="muted">Erstelle eine neue, geschützte Gesamt-PDF. Deine Originaldateien bleiben unverändert.</p>
+        </div>
+
+        <div className="exportSettings">
+          <h3>Export-Einstellungen</h3>
+          <label className="settingSwitch">
+            <span><b>Deckblatt einfügen</b><small>Eine professionelle A4-Titelseite mit Inhaltsübersicht.</small></span>
+            <input type="checkbox" checked={includeCover} onChange={(event) => setIncludeCover(event.target.checked)} />
+            <i aria-hidden="true" />
+          </label>
+
+          {includeCover && (
+            <>
+              <div className="applicantFields">
+                <label>Bewerbername <span className="requiredMark">Pflichtfeld</span>
+                  <input value={applicantName} onChange={(event) => setApplicantName(event.target.value)} placeholder="Vor- und Nachname" />
+                </label>
+                <label>E-Mail (optional)
+                  <input type="email" value={applicantEmail} onChange={(event) => setApplicantEmail(event.target.value)} placeholder="name@beispiel.de" />
+                </label>
+                <label>Telefonnummer (optional)
+                  <input type="tel" value={applicantPhone} onChange={(event) => setApplicantPhone(event.target.value)} placeholder="+49 …" />
+                </label>
+                <label>Aktuelle Adresse (optional)
+                  <input value={applicantCurrentAddress} onChange={(event) => setApplicantCurrentAddress(event.target.value)} placeholder="Straße, PLZ Ort" />
+                </label>
+              </div>
+
+              <div className="photoSetting">
+                <div>
+                  <b>Bewerberfoto (optional)</b>
+                  <small>Wird oben rechts auf dem Deckblatt zugeschnitten.</small>
+                </div>
+                {applicantPhoto && (
+                  <div className="photoSelection">
+                    <img src={applicantPhoto.url} alt="Ausgewähltes Bewerberfoto" />
+                    <span>{applicantPhoto.name}</span>
+                    <button type="button" className="icon" aria-label="Bewerberfoto entfernen" onClick={() => {
+                      setApplicantPhoto((current) => {
+                        if (current) URL.revokeObjectURL(current.url);
+                        return null;
+                      });
+                    }}><X /></button>
+                  </div>
+                )}
+                <label className="photoUpload">
+                  <Upload />
+                  <span>{applicantPhoto ? 'Anderes Foto auswählen' : 'Foto auswählen'}</span>
+                  <input type="file" accept="image/*" onChange={(event) => {
+                    selectApplicantPhoto(event.target.files);
+                    event.target.value = '';
+                  }} />
+                </label>
+              </div>
+
+              <label className="settingSwitch">
+                <span><b>Bewerberfoto anzeigen</b><small>Nur wirksam, wenn ein Foto ausgewählt wurde.</small></span>
+                <input type="checkbox" checked={showApplicantPhoto} onChange={(event) => setShowApplicantPhoto(event.target.checked)} />
+                <i aria-hidden="true" />
+              </label>
+              <label className="settingSwitch">
+                <span><b>Wohnungsadresse anzeigen</b><small>{address.trim() || 'Noch keine Wohnungsadresse angegeben.'}</small></span>
+                <input type="checkbox" checked={showRentalAddress} onChange={(event) => setShowRentalAddress(event.target.checked)} />
+                <i aria-hidden="true" />
+              </label>
+              <label className="settingSwitch">
+                <span><b>Mezax-Hinweis anzeigen</b><small>Datenschutzfreundliche Prüfung auf dem Deckblatt bestätigen.</small></span>
+                <input type="checkbox" checked={showMezaxNotice} onChange={(event) => setShowMezaxNotice(event.target.checked)} />
+                <i aria-hidden="true" />
+              </label>
+            </>
+          )}
+        </div>
+
+        <div className="exportSummary">
+          <div><Check /> {includeCover ? 'Genau eine Deckblattseite mit Inhaltsübersicht' : 'Export ohne Deckblatt'}</div>
           <div><Check /> Automatisch sortierte Unterlagen</div>
           <div><Check /> Ausgewählte Schwärzungen fest eingebrannt</div>
-          <div><Check /> Persönliches Wasserzeichen auf jeder Dokumentseite</div>
+          <div><Check /> Originaldateien bleiben unverändert</div>
         </div>
-        <button className="primary" disabled={exportingFolder || !docs.some((doc) => scans[doc.id]?.status === 'done')} onClick={downloadApplicationFolder}><Download /> {exportingFolder ? 'PDF wird erstellt …' : 'Geschützte Bewerbungsmappe erstellen'}</button>
+
+        {includeCover && !applicantName.trim() && (
+          <p className="exportValidation">Bitte ergänze den Bewerbernamen, um das Deckblatt zu erstellen.</p>
+        )}
+        <button
+          className="primary"
+          disabled={
+            exportingFolder
+            || !docs.some((doc) => scans[doc.id]?.status === 'done')
+            || (includeCover && !applicantName.trim())
+          }
+          onClick={downloadApplicationFolder}
+        >
+          <Download /> {exportingFolder ? 'PDF wird erstellt …' : 'Geschützte Bewerbungsmappe erstellen'}
+        </button>
         <button className="secondary" onClick={() => setScreen('documents')}>Zurück zu Dokumenten</button>
       </section>
     </main>
   );
+
 }
 
 const showLandingPage = window.location.pathname === '/landing';

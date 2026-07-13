@@ -407,9 +407,11 @@ function App() {
 
   function addFiles(fileList: FileList | null, slot?: RequiredDocument) {
     if (!fileList) return;
+    const selectedFiles = Array.from(fileList);
+    if (!selectedFiles.length) return;
     setDocs((current) => [
       ...current,
-      ...Array.from(fileList).map((file, index) => ({
+      ...selectedFiles.map((file, index) => ({
         id: Date.now() + index,
         name: file.name,
         size: file.size,

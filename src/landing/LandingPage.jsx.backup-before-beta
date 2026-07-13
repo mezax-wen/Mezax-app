@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import "./landing-page.css";
 
 const steps = [
@@ -51,7 +51,7 @@ function BrandMark({ compact = false }) {
   return (
     <img
       className={`brand-logo${compact ? " brand-logo--compact" : ""}`}
-      src="/mezax-logo-official-transparent.png"
+      src="/mezax-logo.svg"
       alt=""
       aria-hidden="true"
     />
@@ -68,7 +68,7 @@ function Icon({ name }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-function BetaTestForm({ compact = false }) {
+function WaitlistForm({ compact = false }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("idle");
 
@@ -83,7 +83,7 @@ function BetaTestForm({ compact = false }) {
     return (
       <div className="form-success" role="status">
         <span>✓</span>
-        <div><strong>Danke für dein Interesse.</strong><small>Wir informieren dich über den Beta-Test von Mezax.</small></div>
+        <div><strong>Du bist auf der Liste.</strong><small>Wir informieren dich zum Start von Mezax.</small></div>
       </div>
     );
   }
@@ -100,7 +100,7 @@ function BetaTestForm({ compact = false }) {
         autoComplete="email"
         required
       />
-      <button type="submit">Als Beta-Tester anmelden <span aria-hidden="true">→</span></button>
+      <button type="submit">Frühzugang sichern <span aria-hidden="true">→</span></button>
     </form>
   );
 }
@@ -146,21 +146,21 @@ export default function LandingPage() {
         <nav aria-label="Hauptnavigation">
           <a href="#how">So funktioniert's</a>
           <a href="#benefits">Vorteile</a>
-          <a className="nav-cta" href="#beta-test">Mezax kostenlos testen</a>
+          <a className="nav-cta" href="#waitlist">Frühzugang</a>
         </nav>
       </header>
 
       <main>
         <section className="hero" id="top">
           <div className="hero__content">
-            <div className="eyebrow"><span /> BETA-TEST · KOSTENLOS TESTEN</div>
+            <div className="eyebrow"><span /> BALD VERFÜGBAR · MADE FOR GERMANY</div>
             <h1>Deine Wohnungsbewerbung.<br/><em>Sicher vorbereitet.</em></h1>
-            <p className="hero__lead">Melde dich als Beta-Tester an und teste Mezax mit deinen eigenen Unterlagen.</p>
-            <BetaTestForm />
+            <p className="hero__lead">Mezax erkennt sensible Daten, erklärt jede Empfehlung und erstellt eine professionelle, datenschutzfreundliche Bewerbungsmappe.</p>
+            <WaitlistForm />
             <div className="trust-row">
-              <span>✓ Kostenloser Beta-Test</span>
-              <span>✓ Test mit eigenen Unterlagen</span>
-              <span>✓ Dein Feedback zählt</span>
+              <span>✓ Keine Kreditkarte</span>
+              <span>✓ Unverbindlicher Frühzugang</span>
+              <span>✓ Du entscheidest</span>
             </div>
           </div>
           <AppPreview />
@@ -208,13 +208,13 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="final-cta" id="beta-test">
+        <section className="final-cta" id="waitlist">
           <div className="final-cta__mark"><BrandMark /></div>
-          <span className="section-kicker">BETA-TEST VON MEZAX</span>
-          <h2>Teste Mezax kostenlos<br/>mit deinen Unterlagen.</h2>
-          <p>Melde dich als Beta-Tester an und teste Mezax mit deinen eigenen Unterlagen.</p>
-          <BetaTestForm compact />
-          <small>Dein ehrliches Feedback hilft uns, Mezax sicherer und einfacher zu machen.</small>
+          <span className="section-kicker">SEI VON ANFANG AN DABEI</span>
+          <h2>Bereit für eine sicherere<br/>Wohnungsbewerbung?</h2>
+          <p>Trag dich unverbindlich ein und erfahre als Erstes, wenn Mezax für die ersten Testnutzer bereit ist.</p>
+          <WaitlistForm compact />
+          <small>Kein Spam. Nur wichtige Updates zum Start von Mezax.</small>
         </section>
       </main>
 
@@ -226,6 +226,3 @@ export default function LandingPage() {
     </div>
   );
 }
-
-
-

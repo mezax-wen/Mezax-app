@@ -101,7 +101,7 @@ const emptyScan: ScanResult = {
 function Logo({ small = false }: { small?: boolean }) {
   return (
     <div className={small ? 'logo small' : 'logo'} aria-label="Mezax">
-      <img src="/mezax-logo-official-transparent.png" alt="" />
+      <img src="/mezax-logo.svg" alt="" />
     </div>
   );
 }
@@ -235,8 +235,8 @@ function detectSensitiveData(words: WordBox[]): Detection[] {
 }
 
 function maskedValue(value: string) {
-  if (value.length <= 5) return 'â€¢â€¢â€¢â€¢â€¢';
-  return `${value.slice(0, 2)}${'â€¢'.repeat(Math.min(9, value.length - 4))}${value.slice(-2)}`;
+  if (value.length <= 5) return '•••••';
+  return `${value.slice(0, 2)}${'•'.repeat(Math.min(9, value.length - 4))}${value.slice(-2)}`;
 }
 
 async function imageSize(url: string) {
@@ -298,10 +298,10 @@ function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<Screen>('welcome');
   const [title, setTitle] = useState('Wohnung in Berlin');
-  const [address, setAddress] = useState('MusterstraÃŸe 12, 10115 Berlin');
+  const [address, setAddress] = useState('Musterstraße 12, 10115 Berlin');
   const [docs, setDocs] = useState<Doc[]>([]);
   const [preview, setPreview] = useState<Doc | null>(null);
-  const [watermark, setWatermark] = useState('Nur fÃ¼r Wohnungsbewerbung â€“ MusterstraÃŸe 12');
+  const [watermark, setWatermark] = useState('Nur für Wohnungsbewerbung – Musterstraße 12');
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
@@ -370,7 +370,7 @@ function App() {
 
     setScans((current) => ({
       ...current,
-      [doc.id]: { ...emptyScan, status: 'loading', message: isPdf ? 'PDF-Seiten werden vorbereitet â€¦' : 'OCR wird vorbereitet â€¦', progress: 0.03 },
+      [doc.id]: { ...emptyScan, status: 'loading', message: isPdf ? 'PDF-Seiten werden vorbereitet …' : 'OCR wird vorbereitet …', progress: 0.03 },
     }));
 
     let worker: Awaited<ReturnType<typeof createWorker>> | null = null;
@@ -388,7 +388,7 @@ function App() {
               ...(current[doc.id] ?? emptyScan),
               status: 'loading',
               progress: Math.min(0.28, 0.04 + (page / total) * 0.24),
-              message: `PDF-Seite ${page} von ${total} wird gerendert â€¦`,
+              message: `PDF-Seite ${page} von ${total} wird gerendert …`,
             },
           }));
         });
@@ -402,11 +402,11 @@ function App() {
           const raw = typeof event.progress === 'number' ? event.progress : 0;
           const progress = isPdf ? 0.3 + raw * 0.68 : raw;
           const labels: Record<string, string> = {
-            'loading tesseract core': 'PrÃ¼fmodul wird geladen â€¦',
-            'initializing tesseract': 'PrÃ¼fmodul wird gestartet â€¦',
-            'loading language traineddata': 'Deutsche Texterkennung wird geladen â€¦',
-            'initializing api': 'Texterkennung wird vorbereitet â€¦',
-            'recognizing text': 'Sensible Angaben werden gesucht â€¦',
+            'loading tesseract core': 'Prüfmodul wird geladen …',
+            'initializing tesseract': 'Prüfmodul wird gestartet …',
+            'loading language traineddata': 'Deutsche Texterkennung wird geladen …',
+            'initializing api': 'Texterkennung wird vorbereitet …',
+            'recognizing text': 'Sensible Angaben werden gesucht …',
           };
           setScans((current) => ({
             ...current,
@@ -414,7 +414,7 @@ function App() {
               ...(current[doc.id] ?? emptyScan),
               status: 'loading',
               progress,
-              message: labels[event.status] ?? 'Dokument wird geprÃ¼ft â€¦',
+              message: labels[event.status] ?? 'Dokument wird geprüft …',
               width: dimensions.width,
               height: dimensions.height,
               renderedUrl: sourceUrl,
@@ -440,7 +440,7 @@ function App() {
           status: 'done',
           progress: 1,
           message: detections.length
-            ? `${detections.length} mÃ¶gliche sensible Stelle(n) gefunden`
+            ? `${detections.length} mögliche sensible Stelle(n) gefunden`
             : 'Keine eindeutigen Muster gefunden',
           width: dimensions.width,
           height: dimensions.height,
@@ -458,7 +458,7 @@ function App() {
         [doc.id]: {
           ...emptyScan,
           status: 'error',
-          message: 'PrÃ¼fung fehlgeschlagen',
+          message: 'Prüfung fehlgeschlagen',
           error: message,
         },
       }));
@@ -531,8 +531,8 @@ function App() {
           ...current[docId].detections,
           {
             id,
-            label: 'Manuelle SchwÃ¤rzung',
-            value: 'Manuell ausgewÃ¤hlt',
+            label: 'Manuelle Schwärzung',
+            value: 'Manuell ausgewählt',
             confidence: 100,
             selected: true,
             bbox: box,
@@ -657,34 +657,14 @@ function App() {
       const scan = scans[doc.id];
       return scan?.status === 'done' && Boolean(scan.renderedUrl);
     });
-
-    const wronglyAssignedDocuments = docs.filter((doc) => {
-      const scan = scans[doc.id];
-
-      if (scan?.status !== 'done') return false;
-
-      return reviewDocumentAssignment(doc.slot, scan.classification).status === 'mismatch';
-    });
-
-    if (wronglyAssignedDocuments.length > 0) {
-      const fileNames = wronglyAssignedDocuments.map((doc) => `• ${doc.name}`).join('\n');
-
-      window.alert(
-        `Mindestens ein Dokument ist falsch zugeordnet:\n\n${fileNames}\n\nBitte korrigiere zuerst die Dokumentzuordnung.`,
-      );
-
-      setScreen('documents');
-      return;
-    }
-
     if (!exportable.length) return;
     if (exportable.length !== docs.length) {
-      window.alert('Bitte Ã¶ffne und prÃ¼fe zuerst jedes hinzugefÃ¼gte Dokument. UngeprÃ¼fte Dateien werden nicht exportiert.');
+      window.alert('Bitte öffne und prüfe zuerst jedes hinzugefügte Dokument. Ungeprüfte Dateien werden nicht exportiert.');
       return;
     }
 
     const confirmed = window.confirm(
-      'Jetzt wird eine neue, dauerhaft geschwÃ¤rzte PDF erzeugt. Die Originaldateien bleiben unverÃ¤ndert. Fortfahren?',
+      'Jetzt wird eine neue, dauerhaft geschwärzte PDF erzeugt. Die Originaldateien bleiben unverändert. Fortfahren?',
     );
     if (!confirmed) return;
 
@@ -707,16 +687,16 @@ function App() {
       output.setTextColor(190, 205, 218);
       output.setFontSize(12);
       output.text(address || 'Adresse nicht angegeben', 48, 216);
-      output.text('Datenschutzfreundlich zusammengestellt Â· Originale bleiben unverÃ¤ndert', 48, pageHeight - 72);
+      output.text('Datenschutzfreundlich zusammengestellt · Originale bleiben unverändert', 48, pageHeight - 72);
 
       output.addPage('a4', 'portrait');
       output.setTextColor(15, 23, 42);
       output.setFontSize(22);
-      output.text('InhaltsÃ¼bersicht', 48, 62);
+      output.text('Inhaltsübersicht', 48, 62);
       output.setFontSize(11);
       exportable.forEach((doc, index) => {
         const label = doc.slot ?? 'Sonstige Unterlage';
-        output.text(`${index + 1}. ${label} â€“ ${doc.name}`, 56, 100 + index * 24);
+        output.text(`${index + 1}. ${label} – ${doc.name}`, 56, 100 + index * 24);
       });
 
       let exportedPage = 2;
@@ -771,9 +751,9 @@ function App() {
           );
           output.setTextColor(145, 154, 166);
           output.setFontSize(13);
-          output.text(watermark || 'Nur fÃ¼r diese Wohnungsbewerbung', pageWidth / 2, pageHeight / 2, { align: 'center', angle: 45 });
+          output.text(watermark || 'Nur für diese Wohnungsbewerbung', pageWidth / 2, pageHeight / 2, { align: 'center', angle: 45 });
           output.setFontSize(9);
-          output.text(`${doc.slot ?? doc.name} Â· Seite ${exportedPage}`, 38, pageHeight - 24);
+          output.text(`${doc.slot ?? doc.name} · Seite ${exportedPage}`, 38, pageHeight - 24);
         }
       }
 
@@ -786,7 +766,7 @@ function App() {
   const Header = ({ name, back }: { name: string; back?: Screen }) => (
     <header>
       {back ? (
-        <button className="icon" onClick={() => setScreen(back)} aria-label="ZurÃ¼ck">
+        <button className="icon" onClick={() => setScreen(back)} aria-label="Zurück">
           <ArrowLeft />
         </button>
       ) : (
@@ -824,12 +804,12 @@ function App() {
     return (
       <div className="previewOverlay">
         <div className="previewTop">
-          <button className="icon" onClick={() => { setPreview(null); setManualMode(false); setManualDraft(null); }} aria-label="Vorschau schlieÃŸen">
+          <button className="icon" onClick={() => { setPreview(null); setManualMode(false); setManualDraft(null); }} aria-label="Vorschau schließen">
             <X />
           </button>
           <div>
             <b>{preview.name}</b>
-            <small>{(preview.size / 1048576).toFixed(2)} MB Â· lokal geÃ¶ffnet</small>
+            <small>{(preview.size / 1048576).toFixed(2)} MB · lokal geöffnet</small>
           </div>
         </div>
 
@@ -849,7 +829,7 @@ function App() {
                       height: `${(detection.bbox.height / scan.height) * 100}%`,
                     }}
                     onClick={() => toggleDetection(preview.id, detection.id)}
-                    aria-label={`${detection.label} ${detection.selected ? 'abwÃ¤hlen' : 'auswÃ¤hlen'}`}
+                    aria-label={`${detection.label} ${detection.selected ? 'abwählen' : 'auswählen'}`}
                   />
                 ))}
               {manualBox && scan.width > 0 && scan.height > 0 && (
@@ -857,11 +837,11 @@ function App() {
               )}
             </div>
           ) : isPdf ? (
-            <div className="pdfRendering"><LoaderCircle className="spin" /><span>PDF wird vorbereitet â€¦</span></div>
+            <div className="pdfRendering"><LoaderCircle className="spin" /><span>PDF wird vorbereitet …</span></div>
           ) : (
             <div className="noPreview">
               <FileText />
-              <h3>Keine Vorschau verfÃ¼gbar</h3>
+              <h3>Keine Vorschau verfügbar</h3>
             </div>
           )}
         </div>
@@ -869,7 +849,7 @@ function App() {
         <div className="previewPanel">
           {(isImage || isPdf) && scan.status === 'loading' && (
             <div className="scanProgress">
-              <div className="scanTitle"><LoaderCircle className="spin" /><b>Automatische PrÃ¼fung lÃ¤uft</b></div>
+              <div className="scanTitle"><LoaderCircle className="spin" /><b>Automatische Prüfung läuft</b></div>
               <p>{scan.message}</p>
               <div className="progressTrack"><span style={{ width: `${Math.max(4, scan.progress * 100)}%` }} /></div>
               <small>Beim ersten Scan werden Komponenten geladen. Das kann auf dem Handy etwas dauern.</small>
@@ -879,7 +859,7 @@ function App() {
           {(isImage || isPdf) && scan.status === 'error' && (
             <div className="scanError">
               <AlertTriangle />
-              <div><b>PrÃ¼fung fehlgeschlagen</b><small>{scan.error}</small></div>
+              <div><b>Prüfung fehlgeschlagen</b><small>{scan.error}</small></div>
               <button className="secondary compact" onClick={() => {
                 setScans((current) => ({ ...current, [preview.id]: emptyScan }));
                 scanDocument(preview);
@@ -893,7 +873,7 @@ function App() {
                 <ShieldCheck />
                 <div>
                   <b>{reviewGroups.length ? reviewGroups.length + ' Empfehlung(en)' : 'Keine eindeutigen Treffer'}</b>
-                  <small>{scan.detections.length ? 'Tippe auf einen Treffer, um ihn an- oder abzuwÃ¤hlen.' : 'Das Dokument muss trotzdem visuell geprÃ¼ft werden.'}</small>
+                  <small>{scan.detections.length ? 'Tippe auf einen Treffer, um ihn an- oder abzuwählen.' : 'Das Dokument muss trotzdem visuell geprüft werden.'}</small>
                 </div>
               </div>
 
@@ -901,7 +881,7 @@ function App() {
                 <div className="info documentClassification">
                   <FileText />
                   <p>
-                    <b>{scan.classification.type} Â· {scan.classification.confidence}% sicher erkannt</b>
+                    <b>{scan.classification.type} · {scan.classification.confidence}% sicher erkannt</b>
                     <small>{scan.classification.explanation}</small>
                   </p>
                 </div>
@@ -911,10 +891,10 @@ function App() {
                 <div className="warning assignmentWarning">
                   <AlertTriangle />
                   <div>
-                    <p><b>MÃ¶glicherweise falsch zugeordnet</b><br />{assignmentReview.message}</p>
+                    <p><b>Möglicherweise falsch zugeordnet</b><br />{assignmentReview.message}</p>
                     {assignmentReview.detectedSlot && (
                       <button className="secondary compact assignmentCorrection" onClick={() => correctDocumentAssignment(preview.id, assignmentReview.detectedSlot!)}>
-                        Als â€ž{assignmentReview.detectedSlot}â€œ einordnen
+                        Als „{assignmentReview.detectedSlot}“ einordnen
                       </button>
                     )}
                   </div>
@@ -924,14 +904,14 @@ function App() {
               <button className={manualMode ? 'secondary compact manualActive' : 'secondary compact'} onClick={() => { setManualMode((active) => !active); setManualDraft(null); }}>
                 {manualMode ? <><Check /> Manuelle Auswahl beenden</> : <><Plus /> Fehlende Stelle selbst markieren</>}
               </button>
-              {manualMode && <small className="manualHint">Ziehe mit Finger oder Maus einen Rahmen Ã¼ber die Information. Kleine versehentliche BerÃ¼hrungen werden ignoriert.</small>}
+              {manualMode && <small className="manualHint">Ziehe mit Finger oder Maus einen Rahmen über die Information. Kleine versehentliche Berührungen werden ignoriert.</small>}
 
               {scan.detections.length > 0 && (
                 <div className="info">
                   <ShieldCheck />
                   <p>
                     <b>Datenschutz-Score: {privacyScore}/100</b>
-                    <small>Der Wert aktualisiert sich, wenn du Empfehlungen an- oder abwÃ¤hlst.</small>
+                    <small>Der Wert aktualisiert sich, wenn du Empfehlungen an- oder abwählst.</small>
                   </p>
                 </div>
               )}
@@ -960,7 +940,7 @@ function App() {
 
               {selectedCount > 0 && !applied && (
                 <button className="primary" onClick={() => { setRedactionsApplied((current) => ({ ...current, [preview.id]: true })); setConfirmingExport(null); }}>
-                  <WandSparkles /> {selectedCount} SchwÃ¤rzung(en) anwenden
+                  <WandSparkles /> {selectedCount} Schwärzung(en) anwenden
                 </button>
               )}
 
@@ -970,7 +950,7 @@ function App() {
                     <ArrowLeft /> Auswahl weiter bearbeiten
                   </button>
                   <button className="primary" onClick={() => setConfirmingExport(preview.id)}>
-                    <Download /> GeschÃ¼tzte {isPdf ? 'PDF' : 'Kopie'} speichern
+                    <Download /> Geschützte {isPdf ? 'PDF' : 'Kopie'} speichern
                   </button>
                 </div>
               )}
@@ -979,11 +959,11 @@ function App() {
                 <div className="exportConfirmation">
                   <div className="warning">
                     <LockKeyhole />
-                    <p><b>EndgÃ¼ltige geschÃ¼tzte Kopie erstellen?</b><br />In der exportierten Datei kÃ¶nnen die SchwÃ¤rzungen nicht rÃ¼ckgÃ¤ngig gemacht werden. Das Original bleibt unverÃ¤ndert.</p>
+                    <p><b>Endgültige geschützte Kopie erstellen?</b><br />In der exportierten Datei können die Schwärzungen nicht rückgängig gemacht werden. Das Original bleibt unverändert.</p>
                   </div>
                   <button className="secondary compact" onClick={() => setConfirmingExport(null)}>Abbrechen</button>
                   <button className="primary" onClick={() => { setConfirmingExport(null); void (isPdf ? downloadRedactedPdf(preview, scan) : downloadRedacted(preview, scan)); }}>
-                    <Download /> EndgÃ¼ltig exportieren
+                    <Download /> Endgültig exportieren
                   </button>
                 </div>
               )}
@@ -992,11 +972,11 @@ function App() {
 
           {(isImage || isPdf) && scan.status === 'idle' && (
             <button className="primary" onClick={() => scanDocument(preview)}>
-              <ScanSearch /> Automatisch prÃ¼fen
+              <ScanSearch /> Automatisch prüfen
             </button>
           )}
 
-          <small className="localNote">Die Datei bleibt lokal im Browser. Automatische und manuelle SchwÃ¤rzungen mÃ¼ssen vor dem Export geprÃ¼ft werden. Beta-Erkennung ohne Garantie.</small>
+          <small className="localNote">Die Datei bleibt lokal im Browser. Automatische und manuelle Schwärzungen müssen vor dem Export geprüft werden. Beta-Erkennung ohne Garantie.</small>
         </div>
       </div>
     );
@@ -1006,15 +986,15 @@ function App() {
     return (
       <main className="app welcome">
         <section>
-          <img className="startBrand" src="/mezax-logo-official-transparent.png" width="1570" height="1001" alt="MEZAX â€“ Teile Dokumente. Nicht deine Daten." />
+          <img className="startBrand" src="/mezax-start-teal.png?v=final-dark" width="1570" height="1001" alt="MEZAX – Teile Dokumente. Nicht deine Daten." />
         </section>
         <div className="trust">
-          <div><ShieldCheck /><p><b>Datenschutz zuerst</b><small>Sensible Daten werden geprÃ¼ft.</small></p></div>
+          <div><ShieldCheck /><p><b>Datenschutz zuerst</b><small>Sensible Daten werden geprüft.</small></p></div>
           <div><ScanSearch /><p><b>Lokale OCR-Beta</b><small>Bilder und PDFs werden direkt im Browser analysiert.</small></p></div>
-          <div><LockKeyhole /><p><b>Du entscheidest</b><small>Jeder Vorschlag kann bestÃ¤tigt oder abgewÃ¤hlt werden.</small></p></div>
+          <div><LockKeyhole /><p><b>Du entscheidest</b><small>Jeder Vorschlag kann bestätigt oder abgewählt werden.</small></p></div>
         </div>
-        <button className="primary" onClick={() => setScreen('dashboard')}>Los gehtâ€™s</button>
-        <small className="note">Prototyp v0.6 Â· FÃ¼r Tests nur Beispieldokumente verwenden</small>
+        <button className="primary" onClick={() => setScreen('dashboard')}>Los geht’s</button>
+        <small className="note">Prototyp v0.6 · Für Tests nur Beispieldokumente verwenden</small>
       </main>
     );
   }
@@ -1022,7 +1002,7 @@ function App() {
   if (screen === 'dashboard') {
     return (
       <main className="app">
-        <Header name="Ãœbersicht" />
+        <Header name="Übersicht" />
         <section className="content">
           <div className="greet">
             <div><p>Willkommen</p><h2>Deine Bewerbungen</h2></div>
@@ -1035,10 +1015,10 @@ function App() {
             <div><b>{title}</b><small>{address}</small></div>
             <span>Entwurf</span>
           </article>
-          <div className="info"><ShieldCheck /><p><b>Mezax Check</b><small>PrÃ¼fe Bilder jetzt automatisch auf ausgewÃ¤hlte sensible Nummern.</small></p></div>
+          <div className="info"><ShieldCheck /><p><b>Mezax Check</b><small>Prüfe Bilder jetzt automatisch auf ausgewählte sensible Nummern.</small></p></div>
         </section>
         <nav>
-          <button className="active"><Home /><small>Ãœbersicht</small></button>
+          <button className="active"><Home /><small>Übersicht</small></button>
           <button><FileText /><small>Mappen</small></button>
           <button><ShieldCheck /><small>Check</small></button>
           <button><UserRound /><small>Profil</small></button>
@@ -1053,8 +1033,8 @@ function App() {
         <Header name="Neue Mappe" back="dashboard" />
         <section className="content">
           <div className="steps"><b>1</b><i /><span>2</span><i /><span>3</span></div>
-          <h2>FÃ¼r welche Wohnung?</h2>
-          <p className="muted">Diese Angaben erscheinen spÃ¤ter auf Deckblatt und Wasserzeichen.</p>
+          <h2>Für welche Wohnung?</h2>
+          <p className="muted">Diese Angaben erscheinen später auf Deckblatt und Wasserzeichen.</p>
           <label>Bezeichnung<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
           <label>Adresse<input value={address} onChange={(event) => setAddress(event.target.value)} /></label>
           <label>Vermieter / Ansprechpartner<input placeholder="Optional" /></label>
@@ -1070,15 +1050,15 @@ function App() {
         <Header name="Unterlagen" back="new" />
         <section className="content">
           <div className="steps"><span>1</span><i /><b>2</b><i /><span>3</span></div>
-          <h2>Dokumente hinzufÃ¼gen</h2>
-          <p className="muted">Ã–ffne ein Bild oder PDF: Die automatische PrÃ¼fung startet direkt.</p>
+          <h2>Dokumente hinzufügen</h2>
+          <p className="muted">Öffne ein Bild oder PDF: Die automatische Prüfung startet direkt.</p>
           <label className="drop">
-            <Upload /><b>Dateien auswÃ¤hlen</b><span>PDF, JPG oder PNG</span>
+            <Upload /><b>Dateien auswählen</b><span>PDF, JPG oder PNG</span>
             <input hidden multiple type="file" accept=".pdf,image/*" onChange={(event) => addFiles(event.target.files)} />
           </label>
           <h3>Empfohlene Unterlagen</h3>
           <div className="folderProgress">
-            <div><b>{completion}% vollstÃ¤ndig</b><small>{completedRequired} von {required.length} Kategorien vorhanden</small></div>
+            <div><b>{completion}% vollständig</b><small>{completedRequired} von {required.length} Kategorien vorhanden</small></div>
             <div className="progressTrack"><span style={{ width: `${completion}%` }} /></div>
           </div>
           <div className="list recommendedList">{required.map((item) => {
@@ -1086,7 +1066,7 @@ function App() {
             return (
               <label className={assigned ? 'recommendedDoc ready' : 'recommendedDoc'} key={item}>
                 <FileText />
-                <span><b>{item}</b><small>{assigned?.name ?? 'Noch nicht hinzugefÃ¼gt'}</small></span>
+                <span><b>{item}</b><small>{assigned?.name ?? 'Noch nicht hinzugefügt'}</small></span>
                 <input hidden multiple={item === 'Gehaltsnachweise'} type="file" accept=".pdf,image/*" onChange={(event) => addFiles(event.target.files, item)} />
                 {assigned ? <Check /> : <Plus />}
               </label>
@@ -1095,7 +1075,7 @@ function App() {
 
           {docs.length > 0 && (
             <>
-              <h3>AusgewÃ¤hlte Dateien</h3>
+              <h3>Ausgewählte Dateien</h3>
               <div className="list">
                 {docs.map((doc) => {
                   const scan = scans[doc.id];
@@ -1105,11 +1085,11 @@ function App() {
                       <FileText />
                       <span>
                         <b>{doc.name}</b>
-                        <small>{doc.slot ? `${doc.slot} Â· ` : ''}</small>
-                        <small>{(doc.size / 1048576).toFixed(2)} MB{scan?.status === 'done' ? ` Â· ${scan.classification?.type ?? 'Sonstiges'} (${scan.classification?.confidence ?? 0}%) Â· ${scan.detections.length} Treffer` : ''}</small>
-                        {assignmentReview.status === 'mismatch' && <small className="assignmentMismatch">âš  {assignmentReview.message}</small>}
+                        <small>{doc.slot ? `${doc.slot} · ` : ''}</small>
+                        <small>{(doc.size / 1048576).toFixed(2)} MB{scan?.status === 'done' ? ` · ${scan.classification?.type ?? 'Sonstiges'} (${scan.classification?.confidence ?? 0}%) · ${scan.detections.length} Treffer` : ''}</small>
+                        {assignmentReview.status === 'mismatch' && <small className="assignmentMismatch">⚠ {assignmentReview.message}</small>}
                       </span>
-                      <button className="openBtn" onClick={() => openPreview(doc)}>Ã–ffnen</button>
+                      <button className="openBtn" onClick={() => openPreview(doc)}>Öffnen</button>
                       <button className="icon" onClick={() => removeDoc(doc.id)} aria-label="Datei entfernen"><X /></button>
                     </div>
                   );
@@ -1118,7 +1098,7 @@ function App() {
             </>
           )}
         </section>
-        <footer><button className="primary" disabled={!docs.length} onClick={() => setScreen('check')}>Zur PrÃ¼fung <ChevronRight /></button></footer>
+        <footer><button className="primary" disabled={!docs.length} onClick={() => setScreen('check')}>Zur Prüfung <ChevronRight /></button></footer>
         <Preview />
       </main>
     );
@@ -1131,14 +1111,14 @@ function App() {
         <Header name="Mezax Check" back="documents" />
         <section className="content center">
           <div className="ring"><Logo /></div>
-          <h2>{allCompleted ? 'PrÃ¼fung abgeschlossen' : 'Unterlagen automatisch prÃ¼fen'}</h2>
-          <p className="muted">{batchProgress.completed} von {batchProgress.total} Dokument(en) wurden lokal geprÃ¼ft.</p>
+          <h2>{allCompleted ? 'Prüfung abgeschlossen' : 'Unterlagen automatisch prüfen'}</h2>
+          <p className="muted">{batchProgress.completed} von {batchProgress.total} Dokument(en) wurden lokal geprüft.</p>
           <div className="folderProgress batchProgress">
-            <div><b>{batchProgress.percent}% geprÃ¼ft</b><small>{batchScanning ? 'Mezax arbeitet Dokument fÃ¼r Dokument' : 'Bereit'}</small></div>
+            <div><b>{batchProgress.percent}% geprüft</b><small>{batchScanning ? 'Mezax arbeitet Dokument für Dokument' : 'Bereit'}</small></div>
             <div className="progressTrack"><span style={{ width: `${batchProgress.percent}%` }} /></div>
           </div>
           <div className="analysis">
-            <div><Check /> Dokumente hinzugefÃ¼gt</div>
+            <div><Check /> Dokumente hinzugefügt</div>
             <div><Check /> Bilder und PDFs bleiben lokal</div>
             <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} OCR und Dokumenttyp-Erkennung</div>
             <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} Datenschutzempfehlungen vorbereitet</div>
@@ -1147,7 +1127,7 @@ function App() {
             <button className="primary" onClick={() => setScreen('result')}>Ergebnis anzeigen</button>
           ) : (
             <button className="primary" disabled={batchScanning} onClick={scanAllDocuments}>
-              {batchScanning ? <><LoaderCircle className="spin" /> PrÃ¼fung lÃ¤uft â€¦</> : <><ScanSearch /> Alle Dokumente prÃ¼fen</>}
+              {batchScanning ? <><LoaderCircle className="spin" /> Prüfung läuft …</> : <><ScanSearch /> Alle Dokumente prüfen</>}
             </button>
           )}
         </section>
@@ -1161,19 +1141,19 @@ function App() {
         <Header name="Datenschutz-Check" back="check" />
         <section className="content">
           <div className="score">
-            <strong>{fixed ? 'A+' : findings.length ? 'B' : 'â€“'}</strong>
-            <p><b>{fixed ? 'VorschlÃ¤ge bestÃ¤tigt' : findings.length ? 'Verbesserungen empfohlen' : 'Noch keine Treffer'}</b><small>{fixed ? 'AusgewÃ¤hlte VorschlÃ¤ge wurden Ã¼bernommen.' : 'Ã–ffne Bilder, um sie automatisch prÃ¼fen zu lassen.'}</small></p>
+            <strong>{fixed ? 'A+' : findings.length ? 'B' : '–'}</strong>
+            <p><b>{fixed ? 'Vorschläge bestätigt' : findings.length ? 'Verbesserungen empfohlen' : 'Noch keine Treffer'}</b><small>{fixed ? 'Ausgewählte Vorschläge wurden übernommen.' : 'Öffne Bilder, um sie automatisch prüfen zu lassen.'}</small></p>
           </div>
           <h3>Gefundene Daten</h3>
           <div className="list findings">
             {findings.length ? findings.map(([label, count]) => (
-              <div key={label}><ShieldCheck /><span><b>{label}</b><small>{count} Fundstelle(n)</small></span><em>PrÃ¼fen</em></div>
-            )) : <div><AlertTriangle /><span><b>Keine Ergebnisse</b><small>Es wurde noch nichts erkannt oder geprÃ¼ft.</small></span></div>}
+              <div key={label}><ShieldCheck /><span><b>{label}</b><small>{count} Fundstelle(n)</small></span><em>Prüfen</em></div>
+            )) : <div><AlertTriangle /><span><b>Keine Ergebnisse</b><small>Es wurde noch nichts erkannt oder geprüft.</small></span></div>}
           </div>
           <label>Wasserzeichen<input value={watermark} onChange={(event) => setWatermark(event.target.value)} /></label>
-          <div className="warning"><LockKeyhole /><p><b>Beta-Hinweis:</b> Automatische Treffer mÃ¼ssen immer kontrolliert werden. Die aktuelle Exportfunktion erzeugt geschÃ¼tzte PNG-Kopien einzelner Bilder.</p></div>
+          <div className="warning"><LockKeyhole /><p><b>Beta-Hinweis:</b> Automatische Treffer müssen immer kontrolliert werden. Die aktuelle Exportfunktion erzeugt geschützte PNG-Kopien einzelner Bilder.</p></div>
         </section>
-        <footer><button className="primary" onClick={() => { setFixed(true); setScreen('export'); }}>VorschlÃ¤ge Ã¼bernehmen</button></footer>
+        <footer><button className="primary" onClick={() => { setFixed(true); setScreen('export'); }}>Vorschläge übernehmen</button></footer>
       </main>
     );
   }
@@ -1183,16 +1163,16 @@ function App() {
       <Header name="Export" back="result" />
       <section className="content center">
         <div className="success"><Check /></div>
-        <h2>PrÃ¼fung abgeschlossen</h2>
-        <p className="muted">Erstelle jetzt eine neue, geschÃ¼tzte Gesamt-PDF. Deine Originale bleiben unverÃ¤ndert.</p>
+        <h2>Prüfung abgeschlossen</h2>
+        <p className="muted">Erstelle jetzt eine neue, geschützte Gesamt-PDF. Deine Originale bleiben unverändert.</p>
         <div className="export">
-          <div><Check /> Deckblatt und InhaltsÃ¼bersicht</div>
+          <div><Check /> Deckblatt und Inhaltsübersicht</div>
           <div><Check /> Automatisch sortierte Unterlagen</div>
-          <div><Check /> AusgewÃ¤hlte SchwÃ¤rzungen fest eingebrannt</div>
-          <div><Check /> PersÃ¶nliches Wasserzeichen auf jeder Dokumentseite</div>
+          <div><Check /> Ausgewählte Schwärzungen fest eingebrannt</div>
+          <div><Check /> Persönliches Wasserzeichen auf jeder Dokumentseite</div>
         </div>
-        <button className="primary" disabled={exportingFolder || !docs.some((doc) => scans[doc.id]?.status === 'done')} onClick={downloadApplicationFolder}><Download /> {exportingFolder ? 'PDF wird erstellt â€¦' : 'GeschÃ¼tzte Bewerbungsmappe erstellen'}</button>
-        <button className="secondary" onClick={() => setScreen('documents')}>ZurÃ¼ck zu Dokumenten</button>
+        <button className="primary" disabled={exportingFolder || !docs.some((doc) => scans[doc.id]?.status === 'done')} onClick={downloadApplicationFolder}><Download /> {exportingFolder ? 'PDF wird erstellt …' : 'Geschützte Bewerbungsmappe erstellen'}</button>
+        <button className="secondary" onClick={() => setScreen('documents')}>Zurück zu Dokumenten</button>
       </section>
     </main>
   );
@@ -1205,5 +1185,3 @@ const showLandingPage =
 createRoot(document.getElementById('root')!).render(
   showLandingPage ? <LandingPage /> : <App />
 );
-
-

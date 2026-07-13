@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import "./landing-page.css";
 
 const steps = [
@@ -51,7 +51,7 @@ function BrandMark({ compact = false }) {
   return (
     <img
       className={`brand-logo${compact ? " brand-logo--compact" : ""}`}
-      src="/mezax-logo-official-transparent.png"
+      src="/mezax-logo.svg"
       alt=""
       aria-hidden="true"
     />
@@ -226,6 +226,3 @@ export default function LandingPage() {
     </div>
   );
 }
-
-
-

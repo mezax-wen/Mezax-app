@@ -1,4 +1,4 @@
-import { folderCompleteness, rentalWatermark, safeFolderFileName, sortFolderDocuments } from './folderPlan';
+import { folderCompleteness, rentalWatermark, safeFolderFileName, sortFolderDocuments } from './folderPlan.ts';
 
 const documents = [
   { name: 'ausweis.pdf', slot: 'Ausweiskopie' as const },
@@ -14,6 +14,9 @@ if (sorted[0].slot !== 'Anschreiben' || sorted[2].slot !== 'Ausweiskopie') {
 const completeness = folderCompleteness(documents);
 if (completeness.completed !== 3 || completeness.percent !== 60) {
   throw new Error('Vollständigkeit der Bewerbungsmappe ist fehlerhaft.');
+}
+if (completeness.missing.join(',') !== 'Mieterselbstauskunft,SCHUFA-Auskunft') {
+  throw new Error('Fehlende Dokumentarten werden nicht korrekt ermittelt.');
 }
 
 if (safeFolderFileName('Wohnung / Berlin?') !== 'Mezax-Wohnung-Berlin.pdf') {

@@ -543,6 +543,7 @@ function App() {
   const completeness = useMemo(() => folderCompleteness(docs), [docs]);
   const completedRequired = completeness.completed;
   const completion = completeness.percent;
+  const missingRequired = completeness.missing;
   const exportReady = allDocumentsReadyForExport(docs.map((doc) => doc.id), scans);
 
   const batchProgress = useMemo(() => batchScanProgress(docs.map((doc) => doc.id), scans), [docs, scans]);
@@ -1684,6 +1685,12 @@ function App() {
             <div><b>{completion}% vollständig</b><small>{completedRequired} von {required.length} Kategorien vorhanden</small></div>
             <div className="progressTrack"><span style={{ width: `${completion}%` }} /></div>
           </div>
+          {missingRequired.length > 0 && (
+            <div className="missingDocuments">
+              <AlertTriangle />
+              <div><b>Noch empfohlene Unterlagen</b><small>{missingRequired.join(' · ')}</small></div>
+            </div>
+          )}
           <div className="list recommendedList">{required.map((item) => {
             const assigned = docs.find((doc) => doc.slot === item);
             return (
@@ -1743,6 +1750,12 @@ function App() {
             <div><b>Bewerbungsmappe: {completion}% vollständig</b><small>{completedRequired} von {required.length} empfohlenen Dokumentarten vorhanden</small></div>
             <div className="progressTrack"><span style={{ width: completion + '%' }} /></div>
           </div>
+          {missingRequired.length > 0 && (
+            <div className="missingDocuments compact">
+              <AlertTriangle />
+              <div><b>Noch nicht enthalten</b><small>{missingRequired.join(' · ')}</small></div>
+            </div>
+          )}
           <div className="folderProgress batchProgress">
             <div><b>Prüffortschritt: {batchProgress.completed} von {batchProgress.total}</b><small>{batchScanning ? 'Mezax arbeitet Dokument für Dokument' : 'Alle hinzugefügten Dateien geprüft'}</small></div>
             <div className="progressTrack"><span style={{ width: batchProgress.percent + '%' }} /></div>
@@ -1784,7 +1797,7 @@ function App() {
             setWatermark(event.target.value);
             setWatermarkCustomized(true);
           }} /></label>
-          <div className="warning"><LockKeyhole /><p><b>Beta-Hinweis:</b> Automatische Treffer müssen immer kontrolliert werden. Die aktuelle Exportfunktion erzeugt geschützte PNG-Kopien einzelner Bilder.</p></div>
+          <div className="warning"><LockKeyhole /><p><b>Beta-Hinweis:</b> Automatische Treffer müssen immer kontrolliert werden. Der Export erstellt eine neue, flach gerenderte Gesamt-PDF; prüfe vor dem Versand trotzdem jede Seite.</p></div>
         </section>
         <footer><button className="primary" onClick={() => { setFixed(true); setScreen('export'); }}>Vorschläge übernehmen</button></footer>
       </main>

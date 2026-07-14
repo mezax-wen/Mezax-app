@@ -59,3 +59,6 @@ nav button.active small{font-weight:800}
 .draftCard{grid-template-columns:44px minmax(0,1fr) 38px}.draftCard .fileicon{grid-column:1;grid-row:1/3}.draftCard>div:nth-child(2){grid-column:2;grid-row:1}.draftCard>span{grid-column:2;grid-row:2;justify-self:start}.draftCard .draftDelete{grid-column:3;grid-row:1/3;align-self:center}.foldersPage{padding-top:18px}.localStorageInfo{margin:0 0 24px}.foldersHeading h2{margin:0 0 6px}.foldersHeading p{margin-bottom:18px}.foldersList{margin-top:18px}nav button:disabled{opacity:.4;cursor:default}
 
 .startBrandShield{display:block;width:155px;max-width:52%;height:auto;margin:-18px auto -2px;object-fit:contain;filter:drop-shadow(0 0 14px #21d7d655)}.startWordmarkImage{display:block;width:245px;max-width:78%;height:auto;margin:2px auto 0;object-fit:contain}.startSlogan{margin:10px 0 0;color:#dce8ed;font-size:14px}.startSlogan span{color:#35ddc0}
+
+
+.missingDocuments{display:flex;align-items:flex-start;gap:10px;margin:10px 0 18px;padding:12px 13px;border:1px solid #efd6a5;border-radius:13px;background:#fff8e8;color:#6f531c;text-align:left}.missingDocuments>svg{width:19px;flex:0 0 auto;color:#d58a13}.missingDocuments>div{display:grid;gap:4px}.missingDocuments small{font-weight:500;line-height:1.45}.missingDocuments.compact{margin-top:0}

@@ -415,6 +415,8 @@ async function renderPdfToComposite(url: string, onProgress?: (page: number, tot
 function App() {
   const appleMobileDevice = /iPad|iPhone|iPod/.test(navigator.userAgent)
     || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standaloneMode = window.matchMedia('(display-mode: standalone)').matches
+    || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<Screen>('welcome');
   const [title, setTitle] = useState('');
@@ -1674,6 +1676,12 @@ function App() {
           </div>
           {draftStatus === 'error' && <p className="draftError">{draftError}</p>}
           <div className="info"><ShieldCheck /><p><b>Mezax Check</b><small>Prüfe Bilder jetzt automatisch auf ausgewählte sensible Nummern.</small></p></div>
+          {appleMobileDevice && !standaloneMode && (
+            <div className="info installHint">
+              <Upload />
+              <p><b>Mezax wie eine App öffnen</b><small>Tippe in Safari auf Teilen und anschließend auf „Zum Home-Bildschirm“.</small></p>
+            </div>
+          )}
         </section>
         <nav>
           <button className="active"><Home /><small>Übersicht</small></button>

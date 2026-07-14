@@ -1313,7 +1313,10 @@ function App() {
     };
 
     try {
-      if (typeof navigator.canShare === 'function' && !navigator.canShare(shareData)) return;
+      if (typeof navigator.canShare === 'function' && !navigator.canShare(shareData)) {
+        window.alert('Dieser Browser kann die PDF nicht direkt teilen. Öffne sie bitte und nutze dort das Teilen-Symbol.');
+        return;
+      }
       await navigator.share(shareData);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -1994,7 +1997,11 @@ function App() {
               <Check />
               <span><b>PDF ist bereit</b><small>{preparedFolder.name}</small></span>
             </div>
-            {appleMobileDevice ? (
+            {appleMobileDevice && typeof navigator.share === 'function' ? (
+              <button className="primary" type="button" onClick={sharePreparedFolder}>
+                <Upload /> PDF teilen oder in Dateien sichern
+              </button>
+            ) : appleMobileDevice ? (
               <a
                 className="primary pdfOpenLink"
                 href={preparedFolder.downloadUrl ? preparedFolder.downloadUrl + '?view=1' : preparedFolder.url}
@@ -2011,14 +2018,16 @@ function App() {
             <button className="secondary pdfOpenLink" type="button" onClick={previewPreparedFolderInApp}>
               <FileText /> Vorschau in Mezax
             </button>
-            {typeof navigator.share === 'function' && (
+            {!appleMobileDevice && typeof navigator.share === 'function' && (
               <button className="secondary" type="button" onClick={sharePreparedFolder}>
-                <Upload /> Teilen oder auf dem Handy speichern
+                <Upload /> PDF teilen
               </button>
             )}
             <small className="preparedPdfHint">
               {appleMobileDevice
-                ? 'Öffne die PDF und tippe in Safari auf das Teilen-Symbol. Wähle danach „In Dateien sichern“. Ein direkter Download ist im lokalen HTTP-Test auf dem iPhone nicht zuverlässig möglich.'
+                ? typeof navigator.share === 'function'
+                  ? 'Tippe auf die grüne Schaltfläche und wähle im iPhone-Menü „In Dateien sichern“ oder eine App zum Teilen.'
+                  : 'Öffne die PDF und tippe anschließend auf das Teilen-Symbol. Wähle dort „In Dateien sichern“.'
                 : 'Am PC öffnet sich ein „Speichern unter“-Dialog. Falls du Mezax über die Netzwerkadresse geöffnet hast, wird der Download automatisch über localhost ausgeführt.'}
             </small>
           </div>

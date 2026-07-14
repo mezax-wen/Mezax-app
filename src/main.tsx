@@ -1343,11 +1343,12 @@ function App() {
     }
 
     if (preparedFolder.downloadUrl) {
-      const directUrl = new URL(preparedFolder.downloadUrl, window.location.origin);
+      const savePath = preparedFolder.downloadUrl.replace('/__mezax-pdf/', '/__mezax-save/');
+      const directUrl = new URL(savePath, window.location.origin);
       if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) {
         directUrl.hostname = 'localhost';
       }
-      window.location.assign(directUrl.toString());
+      window.open(directUrl.toString(), '_blank', 'noopener,noreferrer');
       return;
     }
 

@@ -44,6 +44,8 @@ import {
   type DraftSummary,
 } from './application/draftStorage';
 
+const publicAsset = (fileName: string) => import.meta.env.BASE_URL + fileName;
+
 type Screen = 'welcome' | 'dashboard' | 'folders' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
 
@@ -155,7 +157,7 @@ function formatDraftDate(timestamp: number) {
 function Logo({ small = false }: { small?: boolean }) {
   return (
     <div className={small ? 'logo small' : 'logo'} aria-label="Mezax">
-      <img src="/mezax-logo.png" alt="" />
+      <img src={publicAsset('mezax-logo.png')} alt="" />
     </div>
   );
 }
@@ -1071,7 +1073,7 @@ function App() {
         output.setFillColor(231, 249, 248);
         output.rect(0, 12, 14, pageHeight - 12, 'F');
 
-        const logoPng = await renderImageAsPng('/mezax-logo.png');
+        const logoPng = await renderImageAsPng(publicAsset('mezax-logo.png'));
         output.addImage(logoPng, 'PNG', 48, 38, 38, 47, undefined, 'FAST');
         output.setFont('helvetica', 'bold');
         output.setTextColor(8, 79, 88);
@@ -1272,18 +1274,20 @@ function App() {
       const fileName = safeFolderFileName(title);
       const blob = output.output('blob');
       let downloadUrl: string | undefined;
-      try {
-        const response = await fetch(`/__mezax-pdf?name=${encodeURIComponent(fileName)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/pdf' },
-          body: blob,
-        });
-        if (response.ok) {
-          const result = await response.json() as { url?: string };
-          downloadUrl = result.url;
+      if (import.meta.env.DEV) {
+        try {
+          const response = await fetch('/__mezax-pdf?name=' + encodeURIComponent(fileName), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/pdf' },
+            body: blob,
+          });
+          if (response.ok) {
+            const result = await response.json() as { url?: string };
+            downloadUrl = result.url;
+          }
+        } catch {
+          // Der normale Browser-Blob bleibt als Offline-Fallback verfügbar.
         }
-      } catch {
-        // Der normale Browser-Blob bleibt als Offline-Fallback verfügbar.
       }
       setPreparedFolder((current) => {
         if (current) URL.revokeObjectURL(current.url);
@@ -1608,8 +1612,8 @@ function App() {
     return (
       <main className="app welcome">
         <section>
-          <img className="startBrandShield" src="/mezax-logo.png" alt="Mezax" />
-          <img className="startWordmarkImage" src="/mezax-wordmark.png" alt="Mezax" />
+          <img className="startBrandShield" src={publicAsset('mezax-logo.png')} alt="Mezax" />
+          <img className="startWordmarkImage" src={publicAsset('mezax-wordmark.png')} alt="Mezax" />
           <p className="startSlogan">Teile Dokumente. <span>Nicht deine Daten.</span></p>
         </section>
         <div className="trust">
@@ -2075,7 +2079,7 @@ function App() {
 
 }
 
-const showLandingPage = window.location.pathname === '/landing';
+const showLandingPage = window.location.pathname.endsWith('/landing');
 
 createRoot(document.getElementById('root')!).render(
   showLandingPage ? <LandingPage /> : <App />

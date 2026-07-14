@@ -96,6 +96,7 @@ function localPdfDownloads() {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/Mezax-app/' : '/',
   plugins: [react(), localPdfDownloads()],
-});
+}));

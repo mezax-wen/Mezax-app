@@ -51,7 +51,7 @@ function BrandMark({ compact = false }) {
   return (
     <img
       className={`brand-logo${compact ? " brand-logo--compact" : ""}`}
-      src="/mezax-logo.svg"
+      src="/mezax-logo.png"
       alt=""
       aria-hidden="true"
     />

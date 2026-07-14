@@ -17,11 +17,13 @@ export function sortFolderDocuments<T extends { slot?: RequiredDocument; name: s
 }
 
 export function folderCompleteness(documents: Array<{ slot?: RequiredDocument }>) {
-  const completed = new Set(documents.flatMap((document) => document.slot ? [document.slot] : [])).size;
+  const completedSlots = new Set(documents.flatMap((document) => document.slot ? [document.slot] : []));
+  const completed = completedSlots.size;
   return {
     completed,
     total: requiredDocumentOrder.length,
     percent: Math.round((completed / requiredDocumentOrder.length) * 100),
+    missing: requiredDocumentOrder.filter((slot) => !completedSlots.has(slot)),
   };
 }
 

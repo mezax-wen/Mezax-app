@@ -34,8 +34,19 @@ import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
+import { allDocumentsReadyForExport } from './application/exportReadiness';
+import {
+  listApplicationDrafts,
+  loadApplicationDraft,
+  removeApplicationDraft,
+  saveApplicationDraft,
+  type ApplicationDraft,
+  type DraftSummary,
+} from './application/draftStorage';
 
-type Screen = 'welcome' | 'dashboard' | 'new' | 'documents' | 'check' | 'result' | 'export';
+const publicAsset = (fileName: string) => import.meta.env.BASE_URL + fileName;
+
+type Screen = 'welcome' | 'dashboard' | 'folders' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
 
 type Doc = {
@@ -44,6 +55,7 @@ type Doc = {
   size: number;
   type: string;
   url: string;
+  file: File;
   slot?: RequiredDocument;
 };
 
@@ -52,6 +64,26 @@ type PreparedPdf = {
   name: string;
   file: File;
   downloadUrl?: string;
+};
+
+type SaveFilePicker = (options: {
+  suggestedName: string;
+  types: Array<{
+    description: string;
+    accept: Record<string, string[]>;
+  }>;
+}) => Promise<{
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>;
+    close: () => Promise<void>;
+  }>;
+}>;
+
+type PreparedPdfPreview = {
+  status: 'loading' | 'done' | 'error';
+  name: string;
+  dataUrl?: string;
+  error?: string;
 };
 
 type WordBox = {
@@ -106,10 +138,26 @@ const emptyScan: ScanResult = {
   text: '',
 };
 
+function createDraftId() {
+  return typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : 'draft-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+}
+
+function formatDraftDate(timestamp: number) {
+  return new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp);
+}
+
 function Logo({ small = false }: { small?: boolean }) {
   return (
     <div className={small ? 'logo small' : 'logo'} aria-label="Mezax">
-      <img src="/mezax-logo.svg" alt="" />
+      <img src={publicAsset('mezax-logo.png')} alt="" />
     </div>
   );
 }
@@ -261,7 +309,7 @@ async function loadBrowserImage(url: string) {
   return image;
 }
 
-async function renderSvgAsPng(url: string, width = 520, height = 640) {
+async function renderImageAsPng(url: string, width = 520, height = 640) {
   const response = await fetch(url);
   if (!response.ok) throw new Error('Mezax-Logo konnte nicht geladen werden.');
   const objectUrl = URL.createObjectURL(await response.blob());
@@ -365,10 +413,12 @@ async function renderPdfToComposite(url: string, onProgress?: (page: number, tot
 }
 
 function App() {
+  const appleMobileDevice = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<Screen>('welcome');
-  const [title, setTitle] = useState('Wohnung in Berlin');
-  const [address, setAddress] = useState('Musterstraße 12, 10115 Berlin');
+  const [title, setTitle] = useState('');
+  const [address, setAddress] = useState('');
   const [docs, setDocs] = useState<Doc[]>([]);
   const [preview, setPreview] = useState<Doc | null>(null);
   const [watermark, setWatermark] = useState(() => rentalWatermark(address));
@@ -381,11 +431,17 @@ function App() {
   const [applicantEmail, setApplicantEmail] = useState('');
   const [applicantPhone, setApplicantPhone] = useState('');
   const [applicantCurrentAddress, setApplicantCurrentAddress] = useState('');
-  const [applicantPhoto, setApplicantPhoto] = useState<{ name: string; url: string } | null>(null);
+  const [applicantPhoto, setApplicantPhoto] = useState<{ name: string; url: string; file: File } | null>(null);
   const [preparedFolder, setPreparedFolder] = useState<PreparedPdf | null>(null);
+  const [preparedPdfPreview, setPreparedPdfPreview] = useState<PreparedPdfPreview | null>(null);
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
+  const [draftId, setDraftId] = useState(createDraftId);
+  const [draftActive, setDraftActive] = useState(false);
+  const [drafts, setDrafts] = useState<DraftSummary[]>([]);
+  const [draftStatus, setDraftStatus] = useState<'idle' | 'loading' | 'saving' | 'saved' | 'error'>('idle');
+  const [draftError, setDraftError] = useState('');
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 1500);
@@ -394,6 +450,115 @@ function App() {
   useEffect(() => () => {
     if (applicantPhoto) URL.revokeObjectURL(applicantPhoto.url);
   }, [applicantPhoto]);
+  useEffect(() => {
+    let active = true;
+    listApplicationDrafts()
+      .then((storedDrafts) => {
+        if (active) setDrafts(storedDrafts);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setDraftStatus('error');
+        setDraftError(error instanceof Error ? error.message : 'Entw\u00fcrfe konnten nicht geladen werden.');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!draftActive) return;
+
+    setDraftStatus('saving');
+    setDraftError('');
+    const timer = window.setTimeout(() => {
+      const updatedAt = Date.now();
+      const draft: ApplicationDraft = {
+        id: draftId,
+        title,
+        address,
+        watermark,
+        watermarkCustomized,
+        includeCover,
+        showApplicantPhoto,
+        showRentalAddress,
+        showMezaxNotice,
+        applicantName,
+        applicantEmail,
+        applicantPhone,
+        applicantCurrentAddress,
+        applicantPhoto: applicantPhoto ? { name: applicantPhoto.name, file: applicantPhoto.file } : null,
+        documents: docs.map((doc) => ({
+          id: doc.id,
+          name: doc.name,
+          size: doc.size,
+          type: doc.type,
+          slot: doc.slot,
+          file: doc.file,
+        })),
+        updatedAt,
+      };
+
+      saveApplicationDraft(draft)
+        .then(() => {
+          setDraftStatus('saved');
+          setDrafts((current) => [
+            {
+              id: draft.id,
+              title: draft.title,
+              address: draft.address,
+              updatedAt,
+              documentCount: draft.documents.length,
+            },
+            ...current.filter((item) => item.id !== draft.id),
+          ].sort((left, right) => right.updatedAt - left.updatedAt));
+        })
+        .catch((error) => {
+          setDraftStatus('error');
+          setDraftError(error instanceof Error ? error.message : 'Entwurf konnte nicht gespeichert werden.');
+        });
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    address,
+    applicantCurrentAddress,
+    applicantEmail,
+    applicantName,
+    applicantPhone,
+    applicantPhoto,
+    docs,
+    draftActive,
+    draftId,
+    includeCover,
+    showApplicantPhoto,
+    showMezaxNotice,
+    showRentalAddress,
+    title,
+    watermark,
+    watermarkCustomized,
+  ]);
+  useEffect(() => {
+    setPreparedFolder((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }, [
+    address,
+    applicantCurrentAddress,
+    applicantEmail,
+    applicantName,
+    applicantPhone,
+    applicantPhoto,
+    docs,
+    includeCover,
+    redactionsApplied,
+    scans,
+    showApplicantPhoto,
+    showMezaxNotice,
+    showRentalAddress,
+    title,
+    watermark,
+  ]);
   const [confirmingExport, setConfirmingExport] = useState<number | null>(null);
   const [exportingFolder, setExportingFolder] = useState(false);
   const [batchScanning, setBatchScanning] = useState(false);
@@ -403,6 +568,8 @@ function App() {
   const completeness = useMemo(() => folderCompleteness(docs), [docs]);
   const completedRequired = completeness.completed;
   const completion = completeness.percent;
+  const missingRequired = completeness.missing;
+  const exportReady = allDocumentsReadyForExport(docs.map((doc) => doc.id), scans);
 
   const batchProgress = useMemo(() => batchScanProgress(docs.map((doc) => doc.id), scans), [docs, scans]);
 
@@ -412,6 +579,119 @@ function App() {
     for (const detection of all) counts.set(detection.label, (counts.get(detection.label) ?? 0) + 1);
     return [...counts.entries()];
   }, [scans]);
+
+  function releaseWorkspaceUrls() {
+    for (const doc of docs) URL.revokeObjectURL(doc.url);
+    if (applicantPhoto) URL.revokeObjectURL(applicantPhoto.url);
+    if (preparedFolder) URL.revokeObjectURL(preparedFolder.url);
+  }
+
+  function resetWorkspace() {
+    releaseWorkspaceUrls();
+    setDocs([]);
+    setPreview(null);
+    setScans({});
+    setRedactionsApplied({});
+    setPreparedFolder(null);
+    setFixed(false);
+    setTitle('');
+    setAddress('');
+    setWatermark(rentalWatermark(''));
+    setWatermarkCustomized(false);
+    setIncludeCover(true);
+    setShowApplicantPhoto(true);
+    setShowRentalAddress(true);
+    setShowMezaxNotice(true);
+    setApplicantName('');
+    setApplicantEmail('');
+    setApplicantPhone('');
+    setApplicantCurrentAddress('');
+    setApplicantPhoto(null);
+  }
+
+  function startNewDraft() {
+    setDraftActive(false);
+    resetWorkspace();
+    setDraftId(createDraftId());
+    setDraftStatus('idle');
+    setDraftError('');
+    setScreen('new');
+    window.setTimeout(() => setDraftActive(true), 0);
+  }
+
+  async function openSavedDraft(id: string) {
+    setDraftStatus('loading');
+    setDraftError('');
+    try {
+      const stored = await loadApplicationDraft(id);
+      if (!stored) throw new Error('Der Entwurf wurde nicht gefunden.');
+
+      setDraftActive(false);
+      releaseWorkspaceUrls();
+      const restoredDocs: Doc[] = stored.documents.map((doc) => {
+        const file = new File([doc.file], doc.name, { type: doc.type || doc.file.type });
+        return {
+          id: doc.id,
+          name: doc.name,
+          size: doc.size,
+          type: doc.type,
+          slot: doc.slot,
+          file,
+          url: URL.createObjectURL(file),
+        };
+      });
+      const restoredPhoto = stored.applicantPhoto
+        ? new File([stored.applicantPhoto.file], stored.applicantPhoto.name, { type: stored.applicantPhoto.file.type })
+        : null;
+
+      setDraftId(stored.id);
+      setTitle(stored.title);
+      setAddress(stored.address);
+      setWatermark(stored.watermark);
+      setWatermarkCustomized(stored.watermarkCustomized);
+      setIncludeCover(stored.includeCover);
+      setShowApplicantPhoto(stored.showApplicantPhoto);
+      setShowRentalAddress(stored.showRentalAddress);
+      setShowMezaxNotice(stored.showMezaxNotice);
+      setApplicantName(stored.applicantName);
+      setApplicantEmail(stored.applicantEmail);
+      setApplicantPhone(stored.applicantPhone);
+      setApplicantCurrentAddress(stored.applicantCurrentAddress);
+      setApplicantPhoto(restoredPhoto ? {
+        name: restoredPhoto.name,
+        file: restoredPhoto,
+        url: URL.createObjectURL(restoredPhoto),
+      } : null);
+      setDocs(restoredDocs);
+      setPreview(null);
+      setScans({});
+      setRedactionsApplied({});
+      setPreparedFolder(null);
+      setFixed(false);
+      setDraftStatus('saved');
+      setDraftActive(true);
+      setScreen(restoredDocs.length ? 'documents' : 'new');
+    } catch (error) {
+      setDraftStatus('error');
+      setDraftError(error instanceof Error ? error.message : 'Entwurf konnte nicht ge\u00f6ffnet werden.');
+    }
+  }
+
+  async function deleteSavedDraft(id: string) {
+    if (!window.confirm('Diesen lokal gespeicherten Entwurf wirklich l\u00f6schen?')) return;
+    try {
+      await removeApplicationDraft(id);
+      setDrafts((current) => current.filter((draft) => draft.id !== id));
+      if (draftId === id) {
+        setDraftActive(false);
+        resetWorkspace();
+        setDraftId(createDraftId());
+      }
+    } catch (error) {
+      setDraftStatus('error');
+      setDraftError(error instanceof Error ? error.message : 'Entwurf konnte nicht gel\u00f6scht werden.');
+    }
+  }
 
   function addFiles(fileList: FileList | null, slot?: RequiredDocument) {
     if (!fileList) return;
@@ -425,6 +705,7 @@ function App() {
         size: file.size,
         type: file.type || '',
         url: URL.createObjectURL(file),
+        file,
         slot,
       })),
     ]);
@@ -436,7 +717,7 @@ function App() {
 
     setApplicantPhoto((current) => {
       if (current) URL.revokeObjectURL(current.url);
-      return { name: file.name, url: URL.createObjectURL(file) };
+      return { name: file.name, url: URL.createObjectURL(file), file };
     });
   }
 
@@ -768,6 +1049,7 @@ function App() {
     );
     if (!confirmed) return;
 
+    setPreparedPdfPreview(null);
     setExportingFolder(true);
     try {
       const output = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
@@ -791,7 +1073,7 @@ function App() {
         output.setFillColor(231, 249, 248);
         output.rect(0, 12, 14, pageHeight - 12, 'F');
 
-        const logoPng = await renderSvgAsPng('/mezax-logo.svg');
+        const logoPng = await renderImageAsPng(publicAsset('mezax-logo.png'));
         output.addImage(logoPng, 'PNG', 48, 38, 38, 47, undefined, 'FAST');
         output.setFont('helvetica', 'bold');
         output.setTextColor(8, 79, 88);
@@ -992,18 +1274,20 @@ function App() {
       const fileName = safeFolderFileName(title);
       const blob = output.output('blob');
       let downloadUrl: string | undefined;
-      try {
-        const response = await fetch(`/__mezax-pdf?name=${encodeURIComponent(fileName)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/pdf' },
-          body: blob,
-        });
-        if (response.ok) {
-          const result = await response.json() as { url?: string };
-          downloadUrl = result.url;
+      if (import.meta.env.DEV) {
+        try {
+          const response = await fetch('/__mezax-pdf?name=' + encodeURIComponent(fileName), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/pdf' },
+            body: blob,
+          });
+          if (response.ok) {
+            const result = await response.json() as { url?: string };
+            downloadUrl = result.url;
+          }
+        } catch {
+          // Der normale Browser-Blob bleibt als Offline-Fallback verfügbar.
         }
-      } catch {
-        // Der normale Browser-Blob bleibt als Offline-Fallback verfügbar.
       }
       setPreparedFolder((current) => {
         if (current) URL.revokeObjectURL(current.url);
@@ -1034,6 +1318,74 @@ function App() {
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       window.alert('Die PDF konnte nicht über das Teilen-Menü geöffnet werden. Nutze bitte „PDF öffnen“.');
+    }
+  }
+
+  async function savePreparedFolderOnComputer() {
+    if (!preparedFolder) return;
+
+    const saveFilePicker = (window as typeof window & {
+      showSaveFilePicker?: SaveFilePicker;
+    }).showSaveFilePicker;
+
+    if (typeof saveFilePicker === 'function' && window.isSecureContext) {
+      try {
+        const handle = await saveFilePicker.call(window, {
+          suggestedName: preparedFolder.name,
+          types: [{
+            description: 'PDF-Dokument',
+            accept: { 'application/pdf': ['.pdf'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(preparedFolder.file);
+        await writable.close();
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+      }
+    }
+
+    if (preparedFolder.downloadUrl) {
+      const savePath = preparedFolder.downloadUrl.replace('/__mezax-pdf/', '/__mezax-save/');
+      const directUrl = new URL(savePath, window.location.origin);
+      if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+        directUrl.hostname = 'localhost';
+      }
+      window.open(directUrl.toString(), '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.href = preparedFolder.url;
+    link.download = preparedFolder.name;
+    link.hidden = true;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  async function previewPreparedFolderInApp() {
+    if (!preparedFolder) return;
+
+    setPreparedPdfPreview({
+      status: 'loading',
+      name: preparedFolder.name,
+    });
+
+    try {
+      const rendered = await renderPdfToComposite(preparedFolder.url);
+      setPreparedPdfPreview({
+        status: 'done',
+        name: preparedFolder.name,
+        dataUrl: rendered.dataUrl,
+      });
+    } catch (error) {
+      setPreparedPdfPreview({
+        status: 'error',
+        name: preparedFolder.name,
+        error: error instanceof Error ? error.message : 'Die PDF-Vorschau konnte nicht geladen werden.',
+      });
     }
   }
 
@@ -1260,7 +1612,9 @@ function App() {
     return (
       <main className="app welcome">
         <section>
-          <img className="startBrand" src="/mezax-start-teal.png?v=final-dark" width="1570" height="1001" alt="MEZAX – Teile Dokumente. Nicht deine Daten." />
+          <img className="startBrandShield" src={publicAsset('mezax-logo.png')} alt="Mezax" />
+          <img className="startWordmarkImage" src={publicAsset('mezax-wordmark.png')} alt="Mezax" />
+          <p className="startSlogan">Teile Dokumente. <span>Nicht deine Daten.</span></p>
         </section>
         <div className="trust">
           <div><ShieldCheck /><p><b>Datenschutz zuerst</b><small>Sensible Daten werden geprüft.</small></p></div>
@@ -1282,20 +1636,98 @@ function App() {
             <div><p>Willkommen</p><h2>Deine Bewerbungen</h2></div>
             <div className="avatar"><UserRound /></div>
           </div>
-          <button className="primary big" onClick={() => setScreen('new')}><Plus /> Neue Bewerbungsmappe</button>
+          <button className="primary big" onClick={startNewDraft}><Plus /> Neue Bewerbungsmappe</button>
           <h3>Meine Mappen</h3>
-          <article className="card">
-            <div className="fileicon"><Home /></div>
-            <div><b>{title}</b><small>{address}</small></div>
-            <span>Entwurf</span>
-          </article>
+          <div className="draftList">
+            {drafts.length ? drafts.map((draft) => (
+              <article
+                className="card draftCard"
+                key={draft.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openSavedDraft(draft.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') openSavedDraft(draft.id);
+                }}
+              >
+                <div className="fileicon"><Home /></div>
+                <div>
+                  <b>{draft.title.trim() || 'Wohnungsbewerbung'}</b>
+                  <small>{draft.address.trim() || 'Adresse noch offen'}</small>
+                  <small>{draft.documentCount} Dokument(e) · {formatDraftDate(draft.updatedAt)}</small>
+                </div>
+                <span>Entwurf</span>
+                <button className="icon draftDelete" type="button" aria-label="Entwurf löschen" onClick={(event) => {
+                  event.stopPropagation();
+                  deleteSavedDraft(draft.id);
+                }}><X /></button>
+              </article>
+            )) : (
+              <div className="emptyDrafts">
+                <FileText />
+                <p><b>Noch keine gespeicherte Mappe</b><small>Dein erster Entwurf erscheint automatisch hier.</small></p>
+              </div>
+            )}
+          </div>
+          {draftStatus === 'error' && <p className="draftError">{draftError}</p>}
           <div className="info"><ShieldCheck /><p><b>Mezax Check</b><small>Prüfe Bilder jetzt automatisch auf ausgewählte sensible Nummern.</small></p></div>
         </section>
         <nav>
           <button className="active"><Home /><small>Übersicht</small></button>
-          <button><FileText /><small>Mappen</small></button>
+          <button onClick={() => setScreen('folders')}><FileText /><small>Mappen</small></button>
           <button><ShieldCheck /><small>Check</small></button>
           <button><UserRound /><small>Profil</small></button>
+        </nav>
+      </main>
+    );
+  }
+
+  if (screen === 'folders') {
+    return (
+      <main className="app">
+        <Header name="Meine Mappen" />
+        <section className="content foldersPage">
+          <div className="info localStorageInfo"><ShieldCheck /><p><b>Nur auf diesem Gerät gespeichert</b><small>Deine Unterlagen werden nicht in eine Cloud hochgeladen.</small></p></div>
+          <div className="foldersHeading"><div><h2>Gespeicherte Bewerbungen</h2><p className="muted">Tippe auf eine Mappe, um sie weiterzubearbeiten.</p></div></div>
+          <button className="primary" onClick={startNewDraft}><Plus /> Neue Bewerbungsmappe</button>
+          <div className="draftList foldersList">
+            {drafts.length ? drafts.map((draft) => (
+              <article
+                className="card draftCard"
+                key={draft.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openSavedDraft(draft.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') openSavedDraft(draft.id);
+                }}
+              >
+                <div className="fileicon"><Home /></div>
+                <div>
+                  <b>{draft.title.trim() || 'Wohnungsbewerbung'}</b>
+                  <small>{draft.address.trim() || 'Adresse noch offen'}</small>
+                  <small>{draft.documentCount} Dokument(e) · {formatDraftDate(draft.updatedAt)}</small>
+                </div>
+                <span>Entwurf</span>
+                <button className="icon draftDelete" type="button" aria-label="Entwurf löschen" onClick={(event) => {
+                  event.stopPropagation();
+                  deleteSavedDraft(draft.id);
+                }}><X /></button>
+              </article>
+            )) : (
+              <div className="emptyDrafts">
+                <FileText />
+                <p><b>Noch keine gespeicherte Mappe</b><small>Erstelle zuerst eine neue Bewerbungsmappe.</small></p>
+              </div>
+            )}
+          </div>
+          {draftStatus === 'error' && <p className="draftError">{draftError}</p>}
+        </section>
+        <nav>
+          <button onClick={() => setScreen('dashboard')}><Home /><small>Übersicht</small></button>
+          <button className="active"><FileText /><small>Mappen</small></button>
+          <button disabled={!docs.length} onClick={() => docs.length && setScreen('check')}><ShieldCheck /><small>Check</small></button>
+          <button disabled><UserRound /><small>Profil</small></button>
         </nav>
       </main>
     );
@@ -1306,16 +1738,22 @@ function App() {
       <main className="app">
         <Header name="Neue Mappe" back="dashboard" />
         <section className="content">
+          {draftActive && <div className={'draftSaveStatus ' + draftStatus}><ShieldCheck /><span>{draftStatus === 'saving' ? 'Wird lokal gespeichert …' : draftStatus === 'error' ? 'Speichern fehlgeschlagen' : 'Lokal auf diesem Gerät gespeichert'}</span></div>}
           <div className="steps"><b>1</b><i /><span>2</span><i /><span>3</span></div>
-          <h2>Für welche Wohnung?</h2>
-          <p className="muted">Diese Angaben erscheinen später auf Deckblatt und Wasserzeichen.</p>
-          <label>Bezeichnung<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
-          <label>Adresse<input value={address} onChange={(event) => {
-            const nextAddress = event.target.value;
-            setAddress(nextAddress);
-            if (!watermarkCustomized) setWatermark(rentalWatermark(nextAddress));
-          }} /></label>
-          <label>Vermieter / Ansprechpartner<input placeholder="Optional" /></label>
+          <h2>Auf welche Wohnung bewirbst du dich?</h2>
+          <p className="muted">Diese Angaben helfen dir, die Mappe später wiederzufinden.</p>
+          <label>Adresse der gewünschten Wohnung <span className="optionalMark">Optional</span>
+            <input value={address} placeholder="z. B. Musterstraße 12, 10115 Berlin" onChange={(event) => {
+              const nextAddress = event.target.value;
+              setAddress(nextAddress);
+              if (!watermarkCustomized) setWatermark(rentalWatermark(nextAddress));
+            }} />
+            <small className="fieldHint">Gemeint ist die Wohnung aus dem Angebot – nicht deine aktuelle Wohnadresse.</small>
+          </label>
+          <label>Name der Mappe <span className="optionalMark">Optional</span>
+            <input value={title} placeholder="z. B. Wohnung Berlin-Mitte" onChange={(event) => setTitle(event.target.value)} />
+            <small className="fieldHint">Dieser Name ist nur für deine Übersicht und den PDF-Dateinamen.</small>
+          </label>
         </section>
         <footer><button className="primary" onClick={() => setScreen('documents')}>Weiter <ChevronRight /></button></footer>
       </main>
@@ -1327,6 +1765,7 @@ function App() {
       <main className="app">
         <Header name="Unterlagen" back="new" />
         <section className="content">
+          {draftActive && <div className={'draftSaveStatus ' + draftStatus}><ShieldCheck /><span>{draftStatus === 'saving' ? 'Wird lokal gespeichert …' : draftStatus === 'error' ? 'Speichern fehlgeschlagen' : 'Lokal auf diesem Gerät gespeichert'}</span></div>}
           <div className="steps"><span>1</span><i /><b>2</b><i /><span>3</span></div>
           <h2>Dokumente hinzufügen</h2>
           <p className="muted">Öffne ein Bild oder PDF: Die automatische Prüfung startet direkt.</p>
@@ -1342,6 +1781,12 @@ function App() {
             <div><b>{completion}% vollständig</b><small>{completedRequired} von {required.length} Kategorien vorhanden</small></div>
             <div className="progressTrack"><span style={{ width: `${completion}%` }} /></div>
           </div>
+          {missingRequired.length > 0 && (
+            <div className="missingDocuments">
+              <AlertTriangle />
+              <div><b>Noch empfohlene Unterlagen</b><small>{missingRequired.join(' · ')}</small></div>
+            </div>
+          )}
           <div className="list recommendedList">{required.map((item) => {
             const assigned = docs.find((doc) => doc.slot === item);
             return (
@@ -1396,10 +1841,20 @@ function App() {
         <section className="content center">
           <div className="ring"><Logo /></div>
           <h2>{allCompleted ? 'Prüfung abgeschlossen' : 'Unterlagen automatisch prüfen'}</h2>
-          <p className="muted">{batchProgress.completed} von {batchProgress.total} Dokument(en) wurden lokal geprüft.</p>
+          <p className="muted">Die hochgeladenen Dateien wurden lokal auf sensible Angaben geprüft.</p>
+          <div className={'folderProgress completenessStatus ' + (completion === 100 ? 'complete' : '')}>
+            <div><b>Bewerbungsmappe: {completion}% vollständig</b><small>{completedRequired} von {required.length} empfohlenen Dokumentarten vorhanden</small></div>
+            <div className="progressTrack"><span style={{ width: completion + '%' }} /></div>
+          </div>
+          {missingRequired.length > 0 && (
+            <div className="missingDocuments compact">
+              <AlertTriangle />
+              <div><b>Noch nicht enthalten</b><small>{missingRequired.join(' · ')}</small></div>
+            </div>
+          )}
           <div className="folderProgress batchProgress">
-            <div><b>{batchProgress.percent}% geprüft</b><small>{batchScanning ? 'Mezax arbeitet Dokument für Dokument' : 'Bereit'}</small></div>
-            <div className="progressTrack"><span style={{ width: `${batchProgress.percent}%` }} /></div>
+            <div><b>Prüffortschritt: {batchProgress.completed} von {batchProgress.total}</b><small>{batchScanning ? 'Mezax arbeitet Dokument für Dokument' : 'Alle hinzugefügten Dateien geprüft'}</small></div>
+            <div className="progressTrack"><span style={{ width: batchProgress.percent + '%' }} /></div>
           </div>
           <div className="analysis">
             <div><Check /> Dokumente hinzugefügt</div>
@@ -1438,7 +1893,7 @@ function App() {
             setWatermark(event.target.value);
             setWatermarkCustomized(true);
           }} /></label>
-          <div className="warning"><LockKeyhole /><p><b>Beta-Hinweis:</b> Automatische Treffer müssen immer kontrolliert werden. Die aktuelle Exportfunktion erzeugt geschützte PNG-Kopien einzelner Bilder.</p></div>
+          <div className="warning"><LockKeyhole /><p><b>Beta-Hinweis:</b> Automatische Treffer müssen immer kontrolliert werden. Der Export erstellt eine neue, flach gerenderte Gesamt-PDF; prüfe vor dem Versand trotzdem jede Seite.</p></div>
         </section>
         <footer><button className="primary" onClick={() => { setFixed(true); setScreen('export'); }}>Vorschläge übernehmen</button></footer>
       </main>
@@ -1539,21 +1994,39 @@ function App() {
               <Check />
               <span><b>PDF ist bereit</b><small>{preparedFolder.name}</small></span>
             </div>
-            <button className="primary" type="button" onClick={() => window.location.assign(preparedFolder.downloadUrl ?? preparedFolder.url)}>
-              <Download /> PDF aufs Handy herunterladen
+            {appleMobileDevice ? (
+              <a
+                className="primary pdfOpenLink"
+                href={preparedFolder.downloadUrl ? preparedFolder.downloadUrl + '?view=1' : preparedFolder.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <FileText /> PDF auf dem iPhone öffnen
+              </a>
+            ) : (
+              <button className="primary pdfDownloadLink" type="button" onClick={savePreparedFolderOnComputer}>
+                <Download /> PDF auf dem PC speichern
+              </button>
+            )}
+            <button className="secondary pdfOpenLink" type="button" onClick={previewPreparedFolderInApp}>
+              <FileText /> Vorschau in Mezax
             </button>
             {typeof navigator.share === 'function' && (
               <button className="secondary" type="button" onClick={sharePreparedFolder}>
                 <Upload /> Teilen oder auf dem Handy speichern
               </button>
             )}
-            <a className="secondary pdfDownloadLink" href={preparedFolder.downloadUrl ?? preparedFolder.url} download={preparedFolder.name}>
-              <FileText /> Alternativen Download öffnen
-            </a>
-            <small className="preparedPdfHint">Auf iPhone: PDF öffnen, dann „Teilen“ → „In Dateien sichern“. Auf Android findest du sie anschließend unter „Downloads“.</small>
+            <small className="preparedPdfHint">
+              {appleMobileDevice
+                ? 'Öffne die PDF und tippe in Safari auf das Teilen-Symbol. Wähle danach „In Dateien sichern“. Ein direkter Download ist im lokalen HTTP-Test auf dem iPhone nicht zuverlässig möglich.'
+                : 'Am PC öffnet sich ein „Speichern unter“-Dialog. Falls du Mezax über die Netzwerkadresse geöffnet hast, wird der Download automatisch über localhost ausgeführt.'}
+            </small>
           </div>
         )}
 
+        {!exportReady && (
+          <p className="exportValidation">Bitte prüfe zuerst alle hinzugefügten Dokumente. Eine teilweise geprüfte Mappe kann aus Sicherheitsgründen nicht exportiert werden.</p>
+        )}
         {includeCover && !applicantName.trim() && (
           <p className="exportValidation">Bitte ergänze den Bewerbernamen, um das Deckblatt zu erstellen.</p>
         )}
@@ -1561,7 +2034,7 @@ function App() {
           className="primary"
           disabled={
             exportingFolder
-            || !docs.some((doc) => scans[doc.id]?.status === 'done')
+            || !exportReady
             || (includeCover && !applicantName.trim())
           }
           onClick={downloadApplicationFolder}
@@ -1570,12 +2043,43 @@ function App() {
         </button>
         <button className="secondary" onClick={() => setScreen('documents')}>Zurück zu Dokumenten</button>
       </section>
+
+      {preparedPdfPreview && (
+        <div className="previewOverlay preparedFolderPreview">
+          <div className="previewTop">
+            <button className="icon" type="button" onClick={() => setPreparedPdfPreview(null)} aria-label="PDF-Vorschau schließen">
+              <X />
+            </button>
+            <div>
+              <b>{preparedPdfPreview.name}</b>
+              <small>Vorschau direkt in Mezax</small>
+            </div>
+          </div>
+          <div className="previewBody folderPreviewBody">
+            {preparedPdfPreview.status === 'loading' && (
+              <div className="pdfRendering"><LoaderCircle className="spin" /><span>PDF-Vorschau wird vorbereitet …</span></div>
+            )}
+            {preparedPdfPreview.status === 'error' && (
+              <div className="noPreview">
+                <AlertTriangle />
+                <h3>Vorschau nicht verfügbar</h3>
+                <p>{preparedPdfPreview.error}</p>
+              </div>
+            )}
+            {preparedPdfPreview.status === 'done' && preparedPdfPreview.dataUrl && (
+              <div className="imageStage">
+                <img src={preparedPdfPreview.dataUrl} alt={'Vorschau von ' + preparedPdfPreview.name} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 
 }
 
-const showLandingPage = window.location.pathname === '/landing';
+const showLandingPage = window.location.pathname.endsWith('/landing');
 
 createRoot(document.getElementById('root')!).render(
   showLandingPage ? <LandingPage /> : <App />

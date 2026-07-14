@@ -545,6 +545,7 @@ function App() {
   const completion = completeness.percent;
   const missingRequired = completeness.missing;
   const exportReady = allDocumentsReadyForExport(docs.map((doc) => doc.id), scans);
+  const directDownloadAllowed = window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
   const batchProgress = useMemo(() => batchScanProgress(docs.map((doc) => doc.id), scans), [docs, scans]);
 
@@ -1898,18 +1899,25 @@ function App() {
               <Check />
               <span><b>PDF ist bereit</b><small>{preparedFolder.name}</small></span>
             </div>
-            <button className="primary" type="button" onClick={() => window.location.assign(preparedFolder.downloadUrl ?? preparedFolder.url)}>
-              <Download /> PDF aufs Handy herunterladen
-            </button>
+            <a
+              className="primary pdfOpenLink"
+              href={preparedFolder.downloadUrl ? `${preparedFolder.downloadUrl}?view=1` : preparedFolder.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <FileText /> PDF sicher öffnen
+            </a>
             {typeof navigator.share === 'function' && (
               <button className="secondary" type="button" onClick={sharePreparedFolder}>
                 <Upload /> Teilen oder auf dem Handy speichern
               </button>
             )}
-            <a className="secondary pdfDownloadLink" href={preparedFolder.downloadUrl ?? preparedFolder.url} download={preparedFolder.name}>
-              <FileText /> Alternativen Download öffnen
-            </a>
-            <small className="preparedPdfHint">Auf iPhone: PDF öffnen, dann „Teilen“ → „In Dateien sichern“. Auf Android findest du sie anschließend unter „Downloads“.</small>
+            {directDownloadAllowed && (
+              <a className="secondary pdfDownloadLink" href={preparedFolder.downloadUrl ?? preparedFolder.url} download={preparedFolder.name}>
+                <Download /> PDF direkt herunterladen
+              </a>
+            )}
+            <small className="preparedPdfHint">Öffne die PDF zuerst im Browser. Auf Android kannst du sie dort über das Menü herunterladen oder teilen. So wird der unsichere HTTP-Download des lokalen Testservers umgangen.</small>
           </div>
         )}
 

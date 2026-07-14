@@ -50,7 +50,9 @@ function localPdfDownloads() {
           response.setHeader('Content-Type', 'application/pdf');
           response.setHeader('Content-Length', String(pdf.buffer.length));
           response.setHeader('Cache-Control', 'no-store');
-          response.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(pdf.name)}`);
+          const disposition = url.searchParams.get('view') === '1' ? 'inline' : 'attachment';
+          response.setHeader('X-Content-Type-Options', 'nosniff');
+          response.setHeader('Content-Disposition', `${disposition}; filename*=UTF-8''${encodeURIComponent(pdf.name)}`);
           if (request.method === 'HEAD') response.end();
           else response.end(pdf.buffer);
           return;

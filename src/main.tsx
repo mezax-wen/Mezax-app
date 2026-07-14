@@ -77,6 +77,13 @@ type SaveFilePicker = (options: {
   }>;
 }>;
 
+type PreparedPdfPreview = {
+  status: 'loading' | 'done' | 'error';
+  name: string;
+  dataUrl?: string;
+  error?: string;
+};
+
 type WordBox = {
   text: string;
   normalized: string;
@@ -424,6 +431,7 @@ function App() {
   const [applicantCurrentAddress, setApplicantCurrentAddress] = useState('');
   const [applicantPhoto, setApplicantPhoto] = useState<{ name: string; url: string; file: File } | null>(null);
   const [preparedFolder, setPreparedFolder] = useState<PreparedPdf | null>(null);
+  const [preparedPdfPreview, setPreparedPdfPreview] = useState<PreparedPdfPreview | null>(null);
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
   const [redactionsApplied, setRedactionsApplied] = useState<Record<number, boolean>>({});
@@ -1039,6 +1047,7 @@ function App() {
     );
     if (!confirmed) return;
 
+    setPreparedPdfPreview(null);
     setExportingFolder(true);
     try {
       const output = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
@@ -1349,6 +1358,30 @@ function App() {
     document.body.appendChild(link);
     link.click();
     link.remove();
+  }
+
+  async function previewPreparedFolderInApp() {
+    if (!preparedFolder) return;
+
+    setPreparedPdfPreview({
+      status: 'loading',
+      name: preparedFolder.name,
+    });
+
+    try {
+      const rendered = await renderPdfToComposite(preparedFolder.url);
+      setPreparedPdfPreview({
+        status: 'done',
+        name: preparedFolder.name,
+        dataUrl: rendered.dataUrl,
+      });
+    } catch (error) {
+      setPreparedPdfPreview({
+        status: 'error',
+        name: preparedFolder.name,
+        error: error instanceof Error ? error.message : 'Die PDF-Vorschau konnte nicht geladen werden.',
+      });
+    }
   }
 
   const Header = ({ name, back }: { name: string; back?: Screen }) => (
@@ -1970,14 +2003,9 @@ function App() {
                 <Download /> PDF auf dem PC speichern
               </button>
             )}
-            <a
-              className="secondary pdfOpenLink"
-              href={preparedFolder.downloadUrl ? `${preparedFolder.downloadUrl}?view=1` : preparedFolder.url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <FileText /> PDF ansehen
-            </a>
+            <button className="secondary pdfOpenLink" type="button" onClick={previewPreparedFolderInApp}>
+              <FileText /> Vorschau in Mezax
+            </button>
             {typeof navigator.share === 'function' && (
               <button className="secondary" type="button" onClick={sharePreparedFolder}>
                 <Upload /> Teilen oder auf dem Handy speichern
@@ -2010,6 +2038,37 @@ function App() {
         </button>
         <button className="secondary" onClick={() => setScreen('documents')}>Zurück zu Dokumenten</button>
       </section>
+
+      {preparedPdfPreview && (
+        <div className="previewOverlay preparedFolderPreview">
+          <div className="previewTop">
+            <button className="icon" type="button" onClick={() => setPreparedPdfPreview(null)} aria-label="PDF-Vorschau schließen">
+              <X />
+            </button>
+            <div>
+              <b>{preparedPdfPreview.name}</b>
+              <small>Vorschau direkt in Mezax</small>
+            </div>
+          </div>
+          <div className="previewBody folderPreviewBody">
+            {preparedPdfPreview.status === 'loading' && (
+              <div className="pdfRendering"><LoaderCircle className="spin" /><span>PDF-Vorschau wird vorbereitet …</span></div>
+            )}
+            {preparedPdfPreview.status === 'error' && (
+              <div className="noPreview">
+                <AlertTriangle />
+                <h3>Vorschau nicht verfügbar</h3>
+                <p>{preparedPdfPreview.error}</p>
+              </div>
+            )}
+            {preparedPdfPreview.status === 'done' && preparedPdfPreview.dataUrl && (
+              <div className="imageStage">
+                <img src={preparedPdfPreview.dataUrl} alt={'Vorschau von ' + preparedPdfPreview.name} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 

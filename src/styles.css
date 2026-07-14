@@ -62,3 +62,5 @@ nav button.active small{font-weight:800}
 
 
 .missingDocuments{display:flex;align-items:flex-start;gap:10px;margin:10px 0 18px;padding:12px 13px;border:1px solid #efd6a5;border-radius:13px;background:#fff8e8;color:#6f531c;text-align:left}.missingDocuments>svg{width:19px;flex:0 0 auto;color:#d58a13}.missingDocuments>div{display:grid;gap:4px}.missingDocuments small{font-weight:500;line-height:1.45}.missingDocuments.compact{margin-top:0}
+
+.folderPreviewBody{align-items:flex-start;justify-content:center;padding:16px;background:#111b27}.folderPreviewBody .imageStage{width:100%;max-width:850px}.folderPreviewBody .imageStage img{display:block;width:100%;max-width:none;max-height:none;height:auto;background:#fff;box-shadow:0 10px 28px #0008}.folderPreviewBody .pdfRendering{margin:auto;display:flex;align-items:center;gap:10px;color:#dce7ef}.folderPreviewBody .noPreview{margin:auto;color:#dce7ef}.folderPreviewBody .noPreview svg{color:#ffb020}

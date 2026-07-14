@@ -1,4 +1,4 @@
-import type { RequiredDocument } from './folderPlan';
+import { folderCompleteness, type RequiredDocument } from './folderPlan.ts';
 
 const DATABASE_NAME = 'mezax-local';
 const DATABASE_VERSION = 1;
@@ -39,7 +39,26 @@ export type ApplicationDraft = {
 
 export type DraftSummary = Pick<ApplicationDraft, 'id' | 'title' | 'address' | 'updatedAt'> & {
   documentCount: number;
+  completedCategories: number;
+  totalCategories: number;
+  completenessPercent: number;
+  missingCategories: RequiredDocument[];
 };
+
+export function summarizeApplicationDraft(draft: ApplicationDraft): DraftSummary {
+  const completeness = folderCompleteness(draft.documents);
+  return {
+    id: draft.id,
+    title: draft.title,
+    address: draft.address,
+    updatedAt: draft.updatedAt,
+    documentCount: draft.documents.length,
+    completedCategories: completeness.completed,
+    totalCategories: completeness.total,
+    completenessPercent: completeness.percent,
+    missingCategories: completeness.missing,
+  };
+}
 
 function requestResult<T>(request: IDBRequest<T>) {
   return new Promise<T>((resolve, reject) => {
@@ -97,13 +116,7 @@ export async function listApplicationDrafts(): Promise<DraftSummary[]> {
     const transaction = database.transaction(DRAFT_STORE, 'readonly');
     const drafts = await requestResult<ApplicationDraft[]>(transaction.objectStore(DRAFT_STORE).getAll());
     return drafts
-      .map((draft) => ({
-        id: draft.id,
-        title: draft.title,
-        address: draft.address,
-        updatedAt: draft.updatedAt,
-        documentCount: draft.documents.length,
-      }))
+      .map(summarizeApplicationDraft)
       .sort((left, right) => right.updatedAt - left.updatedAt);
   } finally {
     database.close();

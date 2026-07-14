@@ -502,6 +502,7 @@ function App() {
 
       saveApplicationDraft(draft)
         .then(() => {
+          const savedCompleteness = folderCompleteness(draft.documents);
           setDraftStatus('saved');
           setDrafts((current) => [
             {
@@ -510,6 +511,10 @@ function App() {
               address: draft.address,
               updatedAt,
               documentCount: draft.documents.length,
+              completedCategories: savedCompleteness.completed,
+              totalCategories: savedCompleteness.total,
+              completenessPercent: savedCompleteness.percent,
+              missingCategories: savedCompleteness.missing,
             },
             ...current.filter((item) => item.id !== draft.id),
           ].sort((left, right) => right.updatedAt - left.updatedAt));
@@ -1659,9 +1664,10 @@ function App() {
                 <div>
                   <b>{draft.title.trim() || 'Wohnungsbewerbung'}</b>
                   <small>{draft.address.trim() || 'Adresse noch offen'}</small>
-                  <small>{draft.documentCount} Dokument(e) · {formatDraftDate(draft.updatedAt)}</small>
+                  <small>{draft.documentCount} Dokument(e) · {draft.completedCategories} von {draft.totalCategories} Kategorien</small>
+                  <small>{draft.missingCategories.length ? 'Fehlt: ' + draft.missingCategories.join(' · ') : 'Vollständig · ' + formatDraftDate(draft.updatedAt)}</small>
                 </div>
-                <span>Entwurf</span>
+                <span className={draft.completenessPercent === 100 ? 'draftState complete' : 'draftState'}>{draft.completenessPercent === 100 ? 'Vollständig' : draft.completenessPercent + '%'}</span>
                 <button className="icon draftDelete" type="button" aria-label="Entwurf löschen" onClick={(event) => {
                   event.stopPropagation();
                   deleteSavedDraft(draft.id);
@@ -1717,9 +1723,10 @@ function App() {
                 <div>
                   <b>{draft.title.trim() || 'Wohnungsbewerbung'}</b>
                   <small>{draft.address.trim() || 'Adresse noch offen'}</small>
-                  <small>{draft.documentCount} Dokument(e) · {formatDraftDate(draft.updatedAt)}</small>
+                  <small>{draft.documentCount} Dokument(e) · {draft.completedCategories} von {draft.totalCategories} Kategorien</small>
+                  <small>{draft.missingCategories.length ? 'Fehlt: ' + draft.missingCategories.join(' · ') : 'Vollständig · ' + formatDraftDate(draft.updatedAt)}</small>
                 </div>
-                <span>Entwurf</span>
+                <span className={draft.completenessPercent === 100 ? 'draftState complete' : 'draftState'}>{draft.completenessPercent === 100 ? 'Vollständig' : draft.completenessPercent + '%'}</span>
                 <button className="icon draftDelete" type="button" aria-label="Entwurf löschen" onClick={(event) => {
                   event.stopPropagation();
                   deleteSavedDraft(draft.id);

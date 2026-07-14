@@ -64,6 +64,19 @@ type PreparedPdf = {
   downloadUrl?: string;
 };
 
+type SaveFilePicker = (options: {
+  suggestedName: string;
+  types: Array<{
+    description: string;
+    accept: Record<string, string[]>;
+  }>;
+}) => Promise<{
+  createWritable: () => Promise<{
+    write: (data: Blob) => Promise<void>;
+    close: () => Promise<void>;
+  }>;
+}>;
+
 type WordBox = {
   text: string;
   normalized: string;
@@ -391,6 +404,8 @@ async function renderPdfToComposite(url: string, onProgress?: (page: number, tot
 }
 
 function App() {
+  const appleMobileDevice = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<Screen>('welcome');
   const [title, setTitle] = useState('');
@@ -1293,6 +1308,49 @@ function App() {
     }
   }
 
+  async function savePreparedFolderOnComputer() {
+    if (!preparedFolder) return;
+
+    const saveFilePicker = (window as typeof window & {
+      showSaveFilePicker?: SaveFilePicker;
+    }).showSaveFilePicker;
+
+    if (typeof saveFilePicker === 'function' && window.isSecureContext) {
+      try {
+        const handle = await saveFilePicker.call(window, {
+          suggestedName: preparedFolder.name,
+          types: [{
+            description: 'PDF-Dokument',
+            accept: { 'application/pdf': ['.pdf'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(preparedFolder.file);
+        await writable.close();
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+      }
+    }
+
+    if (preparedFolder.downloadUrl) {
+      const directUrl = new URL(preparedFolder.downloadUrl, window.location.origin);
+      if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+        directUrl.hostname = 'localhost';
+      }
+      window.location.assign(directUrl.toString());
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.href = preparedFolder.url;
+    link.download = preparedFolder.name;
+    link.hidden = true;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   const Header = ({ name, back }: { name: string; back?: Screen }) => (
     <header>
       {back ? (
@@ -1898,9 +1956,20 @@ function App() {
               <Check />
               <span><b>PDF ist bereit</b><small>{preparedFolder.name}</small></span>
             </div>
-            <a className="primary pdfDownloadLink" href={preparedFolder.url} download={preparedFolder.name}>
-              <Download /> PDF auf Handy speichern
-            </a>
+            {appleMobileDevice ? (
+              <a
+                className="primary pdfOpenLink"
+                href={preparedFolder.downloadUrl ? preparedFolder.downloadUrl + '?view=1' : preparedFolder.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <FileText /> PDF auf dem iPhone öffnen
+              </a>
+            ) : (
+              <button className="primary pdfDownloadLink" type="button" onClick={savePreparedFolderOnComputer}>
+                <Download /> PDF auf dem PC speichern
+              </button>
+            )}
             <a
               className="secondary pdfOpenLink"
               href={preparedFolder.downloadUrl ? `${preparedFolder.downloadUrl}?view=1` : preparedFolder.url}
@@ -1914,7 +1983,11 @@ function App() {
                 <Upload /> Teilen oder auf dem Handy speichern
               </button>
             )}
-            <small className="preparedPdfHint">„Auf Handy speichern“ verwendet direkt die lokal erzeugte PDF und umgeht den blockierten HTTP-Download. Unter Android findest du sie anschließend im Ordner „Downloads“.</small>
+            <small className="preparedPdfHint">
+              {appleMobileDevice
+                ? 'Öffne die PDF und tippe in Safari auf das Teilen-Symbol. Wähle danach „In Dateien sichern“. Ein direkter Download ist im lokalen HTTP-Test auf dem iPhone nicht zuverlässig möglich.'
+                : 'Am PC öffnet sich ein „Speichern unter“-Dialog. Falls du Mezax über die Netzwerkadresse geöffnet hast, wird der Download automatisch über localhost ausgeführt.'}
+            </small>
           </div>
         )}
 

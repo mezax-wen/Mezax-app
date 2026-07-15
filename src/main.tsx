@@ -29,7 +29,7 @@ import LandingPage from './landing/LandingPage';
 import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
 import { findIdentityDocumentNumber, findLabeledIdentityDocumentNumber, findValidIbans, isMachineReadableZoneLine, shouldDetectGermanTaxId, shouldDetectSocialSecurityNumber } from './ai/sensitiveValidators';
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
-import { assignAndSortFolderDocument, folderCompleteness, rentalWatermark, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
+import { assignAndSortFolderDocument, canAssignFolderDocumentSlot, folderCompleteness, rentalWatermark, requiredDocumentOrder, safeFolderFileName, slotAllowsMultipleDocuments, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
@@ -423,6 +423,7 @@ function App() {
   const [title, setTitle] = useState('');
   const [address, setAddress] = useState('');
   const [docs, setDocs] = useState<Doc[]>([]);
+  const [uploadNotice, setUploadNotice] = useState('');
   const [preview, setPreview] = useState<Doc | null>(null);
   const [watermark, setWatermark] = useState(() => rentalWatermark(address));
   const [watermarkCustomized, setWatermarkCustomized] = useState(false);
@@ -456,6 +457,15 @@ function App() {
   useEffect(() => () => {
     if (applicantPhoto) URL.revokeObjectURL(applicantPhoto.url);
   }, [applicantPhoto]);
+  useEffect(() => {
+    setPreview((current) => {
+      if (!current) return current;
+      const updatedDocument = docs.find((document) => document.id === current.id);
+      return updatedDocument && updatedDocument.slot !== current.slot
+        ? { ...current, slot: updatedDocument.slot }
+        : current;
+    });
+  }, [docs]);
   useEffect(() => {
     let active = true;
     listApplicationDrafts()
@@ -600,6 +610,7 @@ function App() {
   function resetWorkspace() {
     releaseWorkspaceUrls();
     setDocs([]);
+    setUploadNotice('');
     setPreview(null);
     setScans({});
     setRedactionsApplied({});
@@ -738,9 +749,49 @@ function App() {
     if (!fileList) return;
     const selectedFiles = Array.from(fileList);
     if (!selectedFiles.length) return;
-    setDocs((current) => [
+    const current = docs;
+    if (slot && !canAssignFolderDocumentSlot(current, -1, slot)) {
+      setUploadNotice(`${slot} ist bereits vorhanden. Entferne zuerst die vorhandene Datei, wenn du sie ersetzen möchtest.`);
+      return;
+    }
+
+    const acceptedFiles: File[] = [];
+    let skippedDuplicates = 0;
+    for (const file of selectedFiles) {
+      const alreadyPresent = current.some((document) => (
+        document.name === file.name
+        && document.size === file.size
+        && document.type === (file.type || '')
+      ));
+      const repeatedSelection = acceptedFiles.some((accepted) => (
+        accepted.name === file.name
+        && accepted.size === file.size
+        && accepted.type === file.type
+      ));
+      if (alreadyPresent || repeatedSelection) skippedDuplicates += 1;
+      else acceptedFiles.push(file);
+    }
+
+    const allowedFiles = slot && !slotAllowsMultipleDocuments(slot)
+      ? acceptedFiles.slice(0, 1)
+      : acceptedFiles;
+    const skippedForCategory = acceptedFiles.length - allowedFiles.length;
+    if (!allowedFiles.length) {
+      setUploadNotice('Diese Datei ist bereits in der Mappe und wurde nicht erneut hinzugefügt.');
+      return;
+    }
+
+    if (skippedDuplicates || skippedForCategory) {
+      setUploadNotice(slot && !slotAllowsMultipleDocuments(slot)
+        ? `Für ${slot} ist nur eine Datei erlaubt. Weitere Dateien wurden übersprungen.`
+        : 'Doppelte Dateien wurden übersprungen.');
+    } else {
+      setUploadNotice('');
+    }
+
+    setDocs(sortFolderDocuments([
       ...current,
-      ...selectedFiles.map((file, index) => ({
+      ...allowedFiles.map((file, index) => ({
         id: Date.now() + index,
         name: file.name,
         size: file.size,
@@ -749,9 +800,8 @@ function App() {
         file,
         slot,
       })),
-    ]);
+    ]));
   }
-
   function selectApplicantPhoto(fileList: FileList | null) {
     const file = fileList?.[0];
     if (!file || !file.type.startsWith('image/')) return;
@@ -763,6 +813,7 @@ function App() {
   }
 
   function removeDoc(id: number) {
+    setUploadNotice('');
     setDocs((current) => {
       const target = current.find((doc) => doc.id === id);
       if (target) URL.revokeObjectURL(target.url);
@@ -776,8 +827,12 @@ function App() {
   }
 
   function correctDocumentAssignment(docId: number, slot: RequiredDocument) {
-    setDocs((current) => assignAndSortFolderDocument(current, docId, slot));
-    setPreview((current) => current?.id === docId ? { ...current, slot } : current);
+    if (!canAssignFolderDocumentSlot(docs, docId, slot)) {
+      setUploadNotice(`${slot} ist bereits vorhanden. Entferne zuerst die vorhandene Datei.`);
+      return;
+    }
+    setUploadNotice('');
+    setDocs(assignAndSortFolderDocument(docs, docId, slot));
   }
 
   async function scanDocument(doc: Doc) {
@@ -849,8 +904,10 @@ function App() {
       const classification = classifyDocument(data.text ?? '');
       const inferredSlot = slotForClassification(classification.type);
       if (inferredSlot && classification.confidence >= 65) {
-        setDocs((current) => assignAndSortFolderDocument(current, doc.id, inferredSlot));
-        setPreview((current) => current?.id === doc.id ? { ...current, slot: inferredSlot } : current);
+        setDocs((current) => {
+          if (!canAssignFolderDocumentSlot(current, doc.id, inferredSlot)) return current;
+          return assignAndSortFolderDocument(current, doc.id, inferredSlot);
+        });
       }
 
       setScans((current) => ({
@@ -1922,6 +1979,7 @@ function App() {
           <div className="steps"><span>1</span><i /><b>2</b><i /><span>3</span></div>
           <h2>Dokumente hinzufügen</h2>
           <p className="muted">Öffne ein Bild oder PDF: Die automatische Prüfung startet direkt.</p>
+          {uploadNotice && <div className="uploadNotice"><AlertTriangle /><span>{uploadNotice}</span></div>}
           <label className="drop">
             <Upload /><b>Dateien auswählen</b><span>PDF, JPG oder PNG</span>
             <input className="nativeFileInput" multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {

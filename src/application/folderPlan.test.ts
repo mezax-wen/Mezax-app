@@ -1,4 +1,4 @@
-import { assignAndSortFolderDocument, folderCompleteness, rentalWatermark, safeFolderFileName, sortFolderDocuments } from './folderPlan.ts';
+import { assignAndSortFolderDocument, canAssignFolderDocumentSlot, folderCompleteness, rentalWatermark, safeFolderFileName, slotAllowsMultipleDocuments, sortFolderDocuments } from './folderPlan.ts';
 
 const documents = [
   { name: 'ausweis.pdf', slot: 'Ausweiskopie' as const },
@@ -17,6 +17,23 @@ const automaticallySorted = assignAndSortFolderDocument([
 ], 1, 'Anschreiben');
 if (automaticallySorted[0].id !== 1 || automaticallySorted[0].slot !== 'Anschreiben') {
   throw new Error('Sicher erkannte Dokumente werden nicht neu zugeordnet und einsortiert.');
+}
+
+const occupiedSlots = [
+  { id: 1, name: 'anschreiben.pdf', slot: 'Anschreiben' as const },
+  { id: 2, name: 'zweites-anschreiben.pdf' },
+];
+if (canAssignFolderDocumentSlot(occupiedSlots, 2, 'Anschreiben')) {
+  throw new Error('Eine bereits belegte Einzelkategorie darf nicht doppelt zugeordnet werden.');
+}
+const duplicateAssignment = assignAndSortFolderDocument(occupiedSlots, 2, 'Anschreiben');
+if (duplicateAssignment.find((document) => document.id === 2)?.slot) {
+  throw new Error('Die automatische Zuordnung hat eine Einzelkategorie doppelt belegt.');
+}
+if (!slotAllowsMultipleDocuments('Gehaltsnachweise') || !canAssignFolderDocumentSlot([
+  { id: 1, name: 'gehalt-januar.pdf', slot: 'Gehaltsnachweise' as const },
+], 2, 'Gehaltsnachweise')) {
+  throw new Error('Mehrere Gehaltsnachweise müssen weiterhin erlaubt sein.');
 }
 
 const completeness = folderCompleteness(documents);

@@ -64,6 +64,7 @@ type PreparedPdf = {
   url: string;
   name: string;
   file: File;
+  hasCover: boolean;
   downloadUrl?: string;
 };
 
@@ -83,6 +84,7 @@ type SaveFilePicker = (options: {
 type PreparedPdfPreview = {
   status: 'loading' | 'done' | 'error';
   name: string;
+  sourceUrl?: string;
   dataUrl?: string;
   error?: string;
 };
@@ -366,6 +368,26 @@ function addCoverPhoto(
 }
 
 
+async function renderPdfFirstPage(url: string) {
+  const loadingTask = getDocument(url);
+  try {
+    const pdf = await loadingTask.promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 1.45 });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) throw new Error('Deckblatt konnte nicht gerendert werden.');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    return canvas.toDataURL('image/jpeg', 0.92);
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
 async function renderPdfToComposite(url: string, onProgress?: (page: number, total: number) => void) {
   const loadingTask = getDocument(url);
   const pdf = await loadingTask.promise;
@@ -440,6 +462,7 @@ function App() {
   const [profileDraft, setProfileDraft] = useState<ApplicantProfile>(applicantProfile);
   const [profileStatus, setProfileStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [preparedFolder, setPreparedFolder] = useState<PreparedPdf | null>(null);
+  const [preparedCoverPreview, setPreparedCoverPreview] = useState<PreparedPdfPreview | null>(null);
   const [preparedPdfPreview, setPreparedPdfPreview] = useState<PreparedPdfPreview | null>(null);
   const [fixed, setFixed] = useState(false);
   const [scans, setScans] = useState<Record<number, ScanResult>>({});
@@ -563,6 +586,8 @@ function App() {
       if (current) URL.revokeObjectURL(current.url);
       return null;
     });
+    setPreparedCoverPreview(null);
+    setPreparedPdfPreview(null);
   }, [
     address,
     applicantCurrentAddress,
@@ -615,6 +640,8 @@ function App() {
     setScans({});
     setRedactionsApplied({});
     setPreparedFolder(null);
+    setPreparedCoverPreview(null);
+    setPreparedPdfPreview(null);
     setFixed(false);
     setTitle('');
     setAddress('');
@@ -719,6 +746,8 @@ function App() {
       setScans({});
       setRedactionsApplied({});
       setPreparedFolder(null);
+      setPreparedCoverPreview(null);
+      setPreparedPdfPreview(null);
       setFixed(false);
       setDraftStatus('saved');
       setDraftActive(true);
@@ -1148,6 +1177,7 @@ function App() {
     );
     if (!confirmed) return;
 
+    setPreparedCoverPreview(null);
     setPreparedPdfPreview(null);
     setExportingFolder(true);
     try {
@@ -1173,11 +1203,13 @@ function App() {
         output.rect(0, 12, 14, pageHeight - 12, 'F');
 
         const logoPng = await renderImageAsPng(publicAsset('mezax-logo.png'));
-        output.addImage(logoPng, 'PNG', 48, 38, 38, 47, undefined, 'FAST');
-        output.setFont('helvetica', 'bold');
-        output.setTextColor(8, 79, 88);
-        output.setFontSize(17);
-        output.text('MEZAX', 96, 68);
+        const wordmarkPng = await renderImageAsPng(publicAsset('mezax-wordmark.png'));
+        output.addImage(logoPng, 'PNG', 48, 40, 25, 31, undefined, 'FAST');
+        output.addImage(wordmarkPng, 'PNG', 82, 45, 86, 17, undefined, 'FAST');
+        output.setFont('helvetica', 'normal');
+        output.setTextColor(87, 111, 122);
+        output.setFontSize(6.5);
+        output.text('Teile Dokumente. Nicht deine Daten.', 82, 72);
 
         output.setTextColor(12, 31, 47);
         output.setFontSize(29);
@@ -1422,15 +1454,19 @@ function App() {
           // Der normale Browser-Blob bleibt als Offline-Fallback verfügbar.
         }
       }
+      const preparedUrl = URL.createObjectURL(blob);
+      const prepared: PreparedPdf = {
+        url: preparedUrl,
+        name: fileName,
+        file: new File([blob], fileName, { type: 'application/pdf' }),
+        hasCover: includeCover,
+        downloadUrl,
+      };
       setPreparedFolder((current) => {
         if (current) URL.revokeObjectURL(current.url);
-        return {
-          url: URL.createObjectURL(blob),
-          name: fileName,
-          file: new File([blob], fileName, { type: 'application/pdf' }),
-          downloadUrl,
-        };
+        return prepared;
       });
+      void preparePreparedCoverPreview(prepared);
     } finally {
       setExportingFolder(false);
     }
@@ -1499,6 +1535,30 @@ function App() {
     document.body.appendChild(link);
     link.click();
     link.remove();
+  }
+
+  async function preparePreparedCoverPreview(folder: PreparedPdf) {
+    setPreparedCoverPreview({
+      status: 'loading',
+      name: folder.name,
+      sourceUrl: folder.url,
+    });
+    try {
+      const dataUrl = await renderPdfFirstPage(folder.url);
+      setPreparedCoverPreview((current) => current?.sourceUrl === folder.url ? {
+        status: 'done',
+        name: folder.name,
+        sourceUrl: folder.url,
+        dataUrl,
+      } : current);
+    } catch (error) {
+      setPreparedCoverPreview((current) => current?.sourceUrl === folder.url ? {
+        status: 'error',
+        name: folder.name,
+        sourceUrl: folder.url,
+        error: error instanceof Error ? error.message : 'Die Deckblatt-Vorschau konnte nicht geladen werden.',
+      } : current);
+    }
   }
 
   async function previewPreparedFolderInApp() {
@@ -2256,7 +2316,8 @@ function App() {
         </div>
 
         {preparedFolder && (
-          <div className="preparedPdf" id="prepared-pdf">
+          <>
+            <div className="preparedPdf" id="prepared-pdf">
             <div className="preparedPdfTitle">
               <Check />
               <span><b>PDF ist bereit</b><small>{preparedFolder.name}</small></span>
@@ -2294,7 +2355,25 @@ function App() {
                   : 'Öffne die PDF und tippe anschließend auf das Teilen-Symbol. Wähle dort „In Dateien sichern“.'
                 : 'Am PC öffnet sich ein „Speichern unter“-Dialog. Falls du Mezax über die Netzwerkadresse geöffnet hast, wird der Download automatisch über localhost ausgeführt.'}
             </small>
-          </div>
+            </div>
+            <section className="inlinePdfPreview" aria-live="polite">
+              <div className="inlinePdfPreviewTitle">
+                <span><b>{preparedFolder.hasCover ? 'Deckblatt-Vorschau' : 'Vorschau der ersten PDF-Seite'}</b><small>So beginnt deine fertige Bewerbungsmappe.</small></span>
+              </div>
+              {preparedCoverPreview?.status === 'loading' && (
+                <div className="inlinePdfPreviewState"><LoaderCircle className="spin" /><span>Vorschau wird vorbereitet …</span></div>
+              )}
+              {preparedCoverPreview?.status === 'error' && (
+                <div className="inlinePdfPreviewState error"><AlertTriangle /><span>{preparedCoverPreview.error}</span></div>
+              )}
+              {preparedCoverPreview?.status === 'done' && preparedCoverPreview.dataUrl && (
+                <button className="inlinePdfPreviewCanvas" type="button" onClick={previewPreparedFolderInApp} aria-label="PDF-Vorschau groß öffnen">
+                  <img src={preparedCoverPreview.dataUrl} alt={preparedFolder.hasCover ? 'Vorschau des Mezax-Deckblatts' : 'Vorschau der ersten PDF-Seite'} />
+                  <span>Antippen, um die vollständige PDF groß zu öffnen</span>
+                </button>
+              )}
+            </section>
+          </>
         )}
 
         {!exportReady && (

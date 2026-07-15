@@ -8,6 +8,19 @@ export const requiredDocumentOrder = [
 
 export type RequiredDocument = typeof requiredDocumentOrder[number];
 
+export function slotAllowsMultipleDocuments(slot: RequiredDocument) {
+  return slot === 'Gehaltsnachweise';
+}
+
+export function canAssignFolderDocumentSlot<T extends { id: number; slot?: RequiredDocument }>(
+  documents: T[],
+  documentId: number,
+  slot: RequiredDocument,
+) {
+  return slotAllowsMultipleDocuments(slot)
+    || !documents.some((document) => document.id !== documentId && document.slot === slot);
+}
+
 export function sortFolderDocuments<T extends { slot?: RequiredDocument; name: string }>(documents: T[]) {
   return [...documents].sort((left, right) => {
     const leftIndex = left.slot ? requiredDocumentOrder.indexOf(left.slot) : requiredDocumentOrder.length;
@@ -21,6 +34,9 @@ export function assignAndSortFolderDocument<T extends { id: number; slot?: Requi
   documentId: number,
   detectedSlot: RequiredDocument,
 ) {
+  if (!canAssignFolderDocumentSlot(documents, documentId, detectedSlot)) {
+    return sortFolderDocuments(documents);
+  }
   return sortFolderDocuments(
     documents.map((document) => document.id === documentId ? { ...document, slot: detectedSlot } : document),
   );

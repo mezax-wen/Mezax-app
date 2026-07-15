@@ -41,6 +41,18 @@ const rentalRules: Record<string, Omit<PrivacyRecommendation, 'disclaimer'>> = {
     title: 'Schwärzen empfohlen',
     reason: 'Für die Wohnungsbewerbung ist die IBAN meist nicht erforderlich und wird typischerweise erst später benötigt.',
   },
+  'QR-Code / Barcode': {
+    action: 'redact',
+    level: 'high',
+    title: 'Schwärzen empfohlen',
+    reason: 'QR-Codes und Barcodes können interne Referenzen oder weitere maschinenlesbare Daten enthalten, die für die Bewerbung meist nicht benötigt werden.',
+  },
+  Unterschrift: {
+    action: 'review',
+    level: 'medium',
+    title: 'Sichtbarkeit prüfen',
+    reason: 'Eine Unterschrift kann missbraucht werden. Mezax markiert den Bereich zur Kontrolle, schwärzt ihn aber nicht ungefragt.',
+  },
 };
 
 export function getRentalPrivacyRecommendation(

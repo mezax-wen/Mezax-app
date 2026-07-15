@@ -1,4 +1,4 @@
-import { createManualBox, toDocumentPoint } from './manualRedaction';
+import { createManualBox, toDocumentPoint } from './manualRedaction.ts';
 
 const point = toDocumentPoint(150, 100, { left: 50, top: 50, width: 200, height: 100 }, 1000, 500);
 if (point.x !== 500 || point.y !== 250) throw new Error(`Falsche Koordinatenumrechnung: ${JSON.stringify(point)}`);

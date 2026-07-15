@@ -1,4 +1,4 @@
-import { createPdfPagePlan } from './pdfPagePlan';
+import { createPdfPagePlan } from './pdfPagePlan.ts';
 
 const withCover = createPdfPagePlan([
   { id: 1, name: 'Anschreiben', pageCount: 1 },

@@ -1935,9 +1935,12 @@ function App() {
                           <b title={doc.name}>{doc.name}</b>
                           <small className="selectedFileSlot">{doc.slot ?? 'Nicht zugeordnet'}</small>
                           <small className="selectedFileStatus">
-                            {(doc.size / 1048576).toFixed(2)} MB · {scan?.status === 'done'
-                              ? `${scan.classification?.type ?? 'Sonstiges'} · ${scan.detections.length} Treffer`
-                              : 'Noch nicht geprüft'}
+                            <span>{(doc.size / 1048576).toFixed(2)} MB</span>
+                            <span className={scan?.status === 'done' ? 'fileCheckState checked' : 'fileCheckState pending'}>
+                              {scan?.status === 'done'
+                                ? `${scan.classification?.type ?? 'Sonstiges'} · ${scan.detections.length} Treffer`
+                                : 'Noch nicht geprüft'}
+                            </span>
                           </small>
                           {assignmentReview.status === 'mismatch' && <small className="assignmentMismatch">⚠ {assignmentReview.message}</small>}
                         </span>

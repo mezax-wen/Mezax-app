@@ -1181,12 +1181,22 @@ function App() {
         output.setLineWidth(2);
         output.line(48, contentsTop + 10, 115, contentsTop + 10);
 
-        const columnCount = pagePlan.length > 12 ? 2 : 1;
-        const rowsPerColumn = Math.max(1, Math.ceil(pagePlan.length / columnCount));
-        const columnGap = 24;
-        const columnWidth = (pageWidth - 96 - columnGap * (columnCount - 1)) / columnCount;
-        const rowHeight = Math.min(21, 270 / rowsPerColumn);
-        output.setFontSize(rowHeight < 16 ? 7.5 : 9.5);
+        const tableX = 48;
+        const tableY = contentsTop + 22;
+        const tableWidth = pageWidth - 96;
+        const tableHeaderHeight = 28;
+        const availableRowsHeight = 260;
+        const rowHeight = Math.min(42, availableRowsHeight / Math.max(1, pagePlan.length));
+        const compactRows = rowHeight < 30;
+
+        output.setFillColor(236, 249, 248);
+        output.roundedRect(tableX, tableY, tableWidth, tableHeaderHeight, 6, 6, 'F');
+        output.setFont('helvetica', 'bold');
+        output.setTextColor(12, 126, 132);
+        output.setFontSize(8);
+        output.text('NR.', tableX + 14, tableY + 18);
+        output.text('DOKUMENT', tableX + 44, tableY + 18);
+        output.text('SEITE', tableX + tableWidth - 14, tableY + 18, { align: 'right' });
 
         const fitText = (value: string, maxWidth: number) => {
           if (output.getTextWidth(value) <= maxWidth) return value;
@@ -1198,23 +1208,47 @@ function App() {
         };
 
         pagePlan.forEach((entry, index) => {
-          const column = Math.floor(index / rowsPerColumn);
-          const row = index % rowsPerColumn;
-          const x = 48 + column * (columnWidth + columnGap);
-          const y = contentsTop + 34 + row * rowHeight;
+          const rowTop = tableY + tableHeaderHeight + index * rowHeight;
+          const centerY = rowTop + rowHeight / 2 + 3;
+          const infoX = tableX + 44;
           const doc = exportable.find((item) => item.id === entry.id);
-          const documentLabel = doc?.slot ? doc.slot + ' · ' + entry.name : entry.name;
-          const pageNumberWidth = output.getTextWidth(entry.pageLabel);
-          output.setFont('helvetica', 'normal');
-          output.setTextColor(38, 58, 71);
-          output.text(fitText(documentLabel, columnWidth - pageNumberWidth - 18), x, y);
-          output.setDrawColor(210, 224, 226);
-          output.setLineDashPattern([1.5, 2], 0);
-          output.line(x + Math.max(30, columnWidth - pageNumberWidth - 55), y - 2, x + columnWidth - pageNumberWidth - 8, y - 2);
-          output.setLineDashPattern([], 0);
+          const documentCategory = doc?.slot ?? 'Sonstiges';
+
+          if (index % 2 === 1) {
+            output.setFillColor(248, 251, 251);
+            output.rect(tableX, rowTop, tableWidth, rowHeight, 'F');
+          }
+          output.setDrawColor(222, 233, 235);
+          output.setLineWidth(0.6);
+          output.line(tableX, rowTop + rowHeight, tableX + tableWidth, rowTop + rowHeight);
+
           output.setFont('helvetica', 'bold');
-          output.setTextColor(12, 138, 145);
-          output.text(entry.pageLabel, x + columnWidth, y, { align: 'right' });
+          output.setTextColor(12, 150, 155);
+          output.setFontSize(compactRows ? 7 : 8);
+          output.text(String(index + 1).padStart(2, '0'), tableX + 14, centerY);
+
+          if (compactRows) {
+            output.setTextColor(25, 48, 62);
+            output.setFontSize(7.5);
+            output.text(
+              fitText(`${documentCategory} · ${entry.name}`, tableWidth - 118),
+              infoX,
+              centerY,
+            );
+          } else {
+            output.setTextColor(20, 43, 58);
+            output.setFontSize(9.5);
+            output.text(fitText(documentCategory, tableWidth - 118), infoX, rowTop + 16);
+            output.setFont('helvetica', 'normal');
+            output.setTextColor(100, 119, 130);
+            output.setFontSize(7.5);
+            output.text(fitText(entry.name, tableWidth - 118), infoX, rowTop + 30);
+          }
+
+          output.setFont('helvetica', 'bold');
+          output.setTextColor(12, 126, 132);
+          output.setFontSize(compactRows ? 7.5 : 9);
+          output.text(`S. ${entry.pageLabel}`, tableX + tableWidth - 14, centerY, { align: 'right' });
         });
 
         if (showMezaxNotice) {

@@ -2156,31 +2156,9 @@ function App() {
           {draftActive && <div className={'draftSaveStatus ' + draftStatus}><ShieldCheck /><span>{draftStatus === 'saving' ? 'Wird lokal gespeichert …' : draftStatus === 'error' ? 'Speichern fehlgeschlagen' : 'Lokal auf diesem Gerät gespeichert'}</span></div>}
           <div className="steps"><span>1</span><i /><b>2</b><i /><span>3</span></div>
           <h2>Dokumente hinzufügen</h2>
-          <p className="muted">Fotografiere Unterlagen oder wähle vorhandene Dateien. Smart Scan optimiert Bilder und bereitet die lokale Prüfung vor.</p>
+          <p className="muted">Wähle zuerst die passende Unterlage. Mezax startet Smart Scan direkt nach dem Fotografieren oder Auswählen.</p>
           {uploadNotice && <div className="uploadNotice"><AlertTriangle /><span>{uploadNotice}</span></div>}
-          <div className="smartScanUpload">
-            <label className="smartScanAction cameraAction">
-              <Camera />
-              <span><b>Dokument fotografieren</b><small>Kamera öffnen und eine Seite aufnehmen</small></span>
-              <input className="nativeFileInput" type="file" accept="image/*" capture="environment" onChange={(event) => {
-                void addFiles(event.currentTarget.files);
-                event.currentTarget.value = '';
-              }} />
-            </label>
-            <label className="smartScanAction">
-              <Images />
-              <span><b>Dateien oder Seiten wählen</b><small>PDF, JPG oder PNG · Mehrfachauswahl möglich</small></span>
-              <input className="nativeFileInput" multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
-                void addFiles(event.currentTarget.files);
-                event.currentTarget.value = '';
-              }} />
-            </label>
-          </div>
-          <div className="smartScanPromise">
-            <WandSparkles />
-            <span><b>Smart Scan arbeitet lokal</b><small>Bildoptimierung · Dokumenttyp · sensible Daten · richtige Reihenfolge</small></span>
-          </div>
-          <h3>Empfohlene Unterlagen</h3>
+          <h3>Deine Unterlagen</h3>
           <div className="folderProgress">
             <div><b>{completion}% vollständig</b><small>{completedRequired} von {required.length} Kategorien vorhanden</small></div>
             <div className="progressTrack"><span style={{ width: `${completion}%` }} /></div>
@@ -2192,17 +2170,40 @@ function App() {
             </div>
           )}
           <div className="list recommendedList">{required.map((item) => {
-            const assigned = docs.find((doc) => doc.slot === item);
+            const assignedDocuments = docs.filter((doc) => doc.slot === item);
+            const assigned = assignedDocuments[0];
+            const allowsMultiple = slotAllowsMultipleDocuments(item);
+            const addCategoryFiles = (files: FileList | null) => assigned && !allowsMultiple
+              ? appendPagesToDocument(assigned.id, files)
+              : addFiles(files, item);
             return (
-              <label className={assigned ? 'recommendedDoc ready' : 'recommendedDoc'} key={item}>
-                <FileText />
-                <span><b>{item}</b><small>{assigned?.name ?? 'Noch nicht hinzugefügt'}</small></span>
-                <input className="nativeFileInput" multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
-                  void addFiles(event.currentTarget.files, item);
-                  event.currentTarget.value = '';
-                }} />
-                {assigned ? <Check /> : <Plus />}
-              </label>
+              <div className={assigned ? 'recommendedDoc ready' : 'recommendedDoc'} key={item}>
+                <div className="recommendedDocHeader">
+                  <span className="recommendedDocIcon"><FileText /></span>
+                  <span><b>{item}</b><small>{assigned
+                    ? allowsMultiple
+                      ? `${assignedDocuments.length} Nachweis(e) hinzugefügt`
+                      : assigned.name
+                    : 'Noch nicht hinzugefügt'}</small></span>
+                  {assigned ? <Check className="recommendedDocState" /> : <Plus className="recommendedDocState pending" />}
+                </div>
+                <div className="categoryScanActions">
+                  <label className="categoryScanAction">
+                    <Camera /><span>{assigned && !allowsMultiple ? 'Seite scannen' : 'Scannen'}</span>
+                    <input className="nativeFileInput" type="file" accept="image/*" capture="environment" onChange={(event) => {
+                      void addCategoryFiles(event.currentTarget.files);
+                      event.currentTarget.value = '';
+                    }} />
+                  </label>
+                  <label className="categoryScanAction fileAction">
+                    <Images /><span>{assigned && !allowsMultiple ? 'Seiten hinzufügen' : 'Datei wählen'}</span>
+                    <input className="nativeFileInput" multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
+                      void addCategoryFiles(event.currentTarget.files);
+                      event.currentTarget.value = '';
+                    }} />
+                  </label>
+                </div>
+              </div>
             );
           })}</div>
 

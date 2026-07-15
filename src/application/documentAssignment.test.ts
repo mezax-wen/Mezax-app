@@ -1,4 +1,4 @@
-import { reviewDocumentAssignment, slotForClassification } from './documentAssignment';
+import { reviewDocumentAssignment, slotForClassification } from './documentAssignment.ts';
 
 const schufa = {
   type: 'SCHUFA-Auskunft' as const,

@@ -1,4 +1,4 @@
-import { batchScanProgress, pendingDocumentIds } from './scanBatch';
+import { batchScanProgress, pendingDocumentIds } from './scanBatch.ts';
 
 const ids = [1, 2, 3];
 const scans = {

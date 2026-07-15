@@ -9,6 +9,7 @@ GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 import {
   AlertTriangle,
   ArrowLeft,
+  Camera,
   Check,
   ChevronRight,
   Download,
@@ -16,6 +17,7 @@ import {
   Home,
   LoaderCircle,
   LockKeyhole,
+  Images,
   Plus,
   ScanSearch,
   ShieldCheck,
@@ -36,6 +38,8 @@ import { reviewDocumentAssignment, slotForClassification } from './application/d
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
 import { loadApplicantProfile, saveApplicantProfile, type ApplicantProfile } from './application/applicantProfile';
+import { optimizeDocumentImage, type SmartScanEnhancement } from './scan/imageOptimizer';
+import { createMultiPageDocument, shouldBundleSelection } from './scan/multiPageDocument';
 import {
   listApplicationDrafts,
   loadApplicationDraft,
@@ -126,6 +130,8 @@ type ScanResult = {
   classification?: DocumentClassification;
   renderedUrl?: string;
   pdfPages?: PdfPageMeta[];
+  enhancement?: SmartScanEnhancement;
+  codeCount?: number;
   error?: string;
 };
 
@@ -216,7 +222,7 @@ function detectSensitiveData(words: WordBox[]): Detection[] {
   const detections: Detection[] = [];
   const seen = new Set<string>();
 
-  function addDetection(label: string, value: string, matchedWords: WordBox[]) {
+  function addDetection(label: string, value: string, matchedWords: WordBox[], selected = true) {
     if (!matchedWords.length) return;
     const bbox = unionBox(matchedWords);
     const key = `${label}-${Math.round(bbox.left)}-${Math.round(bbox.top)}-${value}`;
@@ -230,7 +236,7 @@ function detectSensitiveData(words: WordBox[]): Detection[] {
       confidence: Math.round(
         matchedWords.reduce((sum, word) => sum + Math.max(0, word.confidence), 0) / matchedWords.length,
       ),
-      selected: true,
+      selected,
       bbox,
     });
   }
@@ -288,6 +294,11 @@ function detectSensitiveData(words: WordBox[]): Detection[] {
     if (positionedNumber) {
       addDetection('Ausweisnummer', positionedNumber.normalized, [positionedNumber]);
     }
+  }
+
+  const signatureLabels = words.filter((word) => /UNTERSCHRIFT|SIGNATURE/.test(word.normalized));
+  for (const signatureLabel of signatureLabels) {
+    addDetection('Unterschrift', 'Bitte visuell prüfen', [signatureLabel], false);
   }
 
   return detections;
@@ -608,6 +619,7 @@ function App() {
   const [confirmingExport, setConfirmingExport] = useState<number | null>(null);
   const [exportingFolder, setExportingFolder] = useState(false);
   const [batchScanning, setBatchScanning] = useState(false);
+  const [combiningDocumentId, setCombiningDocumentId] = useState<number | null>(null);
   const [manualMode, setManualMode] = useState(false);
   const [manualDraft, setManualDraft] = useState<{ start: DocumentPoint; end: DocumentPoint } | null>(null);
 
@@ -774,14 +786,24 @@ function App() {
     }
   }
 
-  function addFiles(fileList: FileList | null, slot?: RequiredDocument) {
+  async function addFiles(fileList: FileList | null, slot?: RequiredDocument) {
     if (!fileList) return;
-    const selectedFiles = Array.from(fileList);
+    let selectedFiles = Array.from(fileList);
     if (!selectedFiles.length) return;
     const current = docs;
     if (slot && !canAssignFolderDocumentSlot(current, -1, slot)) {
-      setUploadNotice(`${slot} ist bereits vorhanden. Entferne zuerst die vorhandene Datei, wenn du sie ersetzen möchtest.`);
+      setUploadNotice(`${slot} ist bereits vorhanden. Nutze bei der vorhandenen Datei „Seite hinzufügen“, wenn sie mehrseitig ist.`);
       return;
+    }
+
+    if (shouldBundleSelection(slot, selectedFiles)) {
+      setUploadNotice(`${selectedFiles.length} Seiten werden lokal zu einem Dokument zusammengeführt …`);
+      try {
+        selectedFiles = [await createMultiPageDocument(selectedFiles, slot)];
+      } catch (error) {
+        setUploadNotice(error instanceof Error ? error.message : 'Die Seiten konnten nicht zusammengeführt werden.');
+        return;
+      }
     }
 
     const acceptedFiles: File[] = [];
@@ -812,8 +834,10 @@ function App() {
 
     if (skippedDuplicates || skippedForCategory) {
       setUploadNotice(slot && !slotAllowsMultipleDocuments(slot)
-        ? `Für ${slot} ist nur eine Datei erlaubt. Weitere Dateien wurden übersprungen.`
+        ? `Für ${slot} ist ein Dokument erlaubt. Mehrere gewählte Seiten werden automatisch in diesem Dokument gebündelt.`
         : 'Doppelte Dateien wurden übersprungen.');
+    } else if (shouldBundleSelection(slot, fileList)) {
+      setUploadNotice(`${fileList.length} Seiten wurden zu einem mehrseitigen Dokument zusammengeführt.`);
     } else {
       setUploadNotice('');
     }
@@ -830,6 +854,47 @@ function App() {
         slot,
       })),
     ]));
+  }
+
+  async function appendPagesToDocument(docId: number, fileList: FileList | null) {
+    const extraPages = fileList ? Array.from(fileList) : [];
+    const target = docs.find((doc) => doc.id === docId);
+    if (!target || !extraPages.length) return;
+    setCombiningDocumentId(docId);
+    setUploadNotice(`${extraPages.length} weitere Seite(n) werden lokal hinzugefügt …`);
+    try {
+      const file = await createMultiPageDocument(
+        [target.file, ...extraPages],
+        target.slot,
+        target.name.replace(/\.[^.]+$/, ''),
+      );
+      URL.revokeObjectURL(target.url);
+      const updated: Doc = {
+        ...target,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        file,
+        url: URL.createObjectURL(file),
+      };
+      setDocs((current) => sortFolderDocuments(current.map((doc) => doc.id === docId ? updated : doc)));
+      setPreview((current) => current?.id === docId ? null : current);
+      setScans((current) => {
+        const next = { ...current };
+        delete next[docId];
+        return next;
+      });
+      setRedactionsApplied((current) => {
+        const next = { ...current };
+        delete next[docId];
+        return next;
+      });
+      setUploadNotice(`${extraPages.length} Seite(n) hinzugefügt. Das Dokument wird beim nächsten Öffnen neu geprüft.`);
+    } catch (error) {
+      setUploadNotice(error instanceof Error ? error.message : 'Die weiteren Seiten konnten nicht hinzugefügt werden.');
+    } finally {
+      setCombiningDocumentId(null);
+    }
   }
   function selectApplicantPhoto(fileList: FileList | null) {
     const file = fileList?.[0];
@@ -881,6 +946,7 @@ function App() {
       let sourceUrl = doc.url;
       let dimensions = await imageSize(doc.url).catch(() => ({ width: 0, height: 0 }));
       let pdfPages: PdfPageMeta[] | undefined;
+      let enhancement: SmartScanEnhancement | undefined;
 
       if (isPdf) {
         const rendered = await renderPdfToComposite(doc.url, (page, total) => {
@@ -897,6 +963,20 @@ function App() {
         sourceUrl = rendered.dataUrl;
         dimensions = { width: rendered.width, height: rendered.height };
         pdfPages = rendered.pages;
+      } else {
+        setScans((current) => ({
+          ...current,
+          [doc.id]: {
+            ...(current[doc.id] ?? emptyScan),
+            status: 'loading',
+            progress: 0.12,
+            message: 'Bild wird lokal zugeschnitten und optimiert …',
+          },
+        }));
+        const optimized = await optimizeDocumentImage(doc.url);
+        sourceUrl = optimized.dataUrl;
+        dimensions = { width: optimized.width, height: optimized.height };
+        enhancement = optimized;
       }
 
       worker = await createWorker('deu', 1, {
@@ -921,6 +1001,7 @@ function App() {
               height: dimensions.height,
               renderedUrl: sourceUrl,
               pdfPages,
+              enhancement,
             },
           }));
         },
@@ -929,7 +1010,27 @@ function App() {
       const result = await worker.recognize(sourceUrl, {}, { tsv: true });
       const data = result.data as typeof result.data & { tsv?: string };
       const words = parseTsv(data.tsv ?? '');
-      const detections = detectSensitiveData(words);
+      const textDetections = detectSensitiveData(words);
+      setScans((current) => ({
+        ...current,
+        [doc.id]: {
+          ...(current[doc.id] ?? emptyScan),
+          status: 'loading',
+          progress: 0.97,
+          message: 'QR-Codes und Barcodes werden lokal geprüft …',
+        },
+      }));
+      const { detectLocalCode } = await import('./scan/barcodeScanner');
+      const codeMatches = await detectLocalCode(sourceUrl, dimensions.width, dimensions.height);
+      const codeDetections: Detection[] = codeMatches.map((code, index) => ({
+        id: `code-${doc.id}-${index}-${Math.round(code.bbox.left)}-${Math.round(code.bbox.top)}`,
+        label: code.label,
+        value: code.value,
+        confidence: 95,
+        selected: true,
+        bbox: code.bbox,
+      }));
+      const detections = [...textDetections, ...codeDetections];
       const classification = classifyDocument(data.text ?? '');
       const inferredSlot = slotForClassification(classification.type);
       if (inferredSlot && classification.confidence >= 65) {
@@ -954,6 +1055,8 @@ function App() {
           classification,
           renderedUrl: sourceUrl,
           pdfPages,
+          enhancement,
+          codeCount: codeDetections.length,
         },
       }));
     } catch (error) {
@@ -1699,6 +1802,14 @@ function App() {
                 </div>
               </div>
 
+              <div className="smartScanChecks">
+                {scan.enhancement && (
+                  <div><WandSparkles /><span><b>Bild automatisch optimiert</b><small>{scan.enhancement.cropped ? 'Ränder entfernt · ' : ''}Kontrast verbessert · Original unverändert</small></span></div>
+                )}
+                <div><ScanSearch /><span><b>QR-/Barcode-Prüfung abgeschlossen</b><small>{scan.codeCount ? `${scan.codeCount} Code gefunden und markiert` : 'Kein lesbarer Code gefunden'}</small></span></div>
+                <div><ShieldCheck /><span><b>Unterschriften werden kontrolliert</b><small>Erkannte Unterschriftsbereiche bleiben bis zu deiner Bestätigung ungeschwärzt.</small></span></div>
+              </div>
+
               {scan.classification && (
                 <div className="info documentClassification">
                   <FileText />
@@ -2038,15 +2149,30 @@ function App() {
           {draftActive && <div className={'draftSaveStatus ' + draftStatus}><ShieldCheck /><span>{draftStatus === 'saving' ? 'Wird lokal gespeichert …' : draftStatus === 'error' ? 'Speichern fehlgeschlagen' : 'Lokal auf diesem Gerät gespeichert'}</span></div>}
           <div className="steps"><span>1</span><i /><b>2</b><i /><span>3</span></div>
           <h2>Dokumente hinzufügen</h2>
-          <p className="muted">Öffne ein Bild oder PDF: Die automatische Prüfung startet direkt.</p>
+          <p className="muted">Fotografiere Unterlagen oder wähle vorhandene Dateien. Smart Scan optimiert Bilder und bereitet die lokale Prüfung vor.</p>
           {uploadNotice && <div className="uploadNotice"><AlertTriangle /><span>{uploadNotice}</span></div>}
-          <label className="drop">
-            <Upload /><b>Dateien auswählen</b><span>PDF, JPG oder PNG</span>
-            <input className="nativeFileInput" multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
-              addFiles(event.currentTarget.files);
-              event.currentTarget.value = '';
-            }} />
-          </label>
+          <div className="smartScanUpload">
+            <label className="smartScanAction cameraAction">
+              <Camera />
+              <span><b>Dokument fotografieren</b><small>Kamera öffnen und eine Seite aufnehmen</small></span>
+              <input className="nativeFileInput" type="file" accept="image/*" capture="environment" onChange={(event) => {
+                void addFiles(event.currentTarget.files);
+                event.currentTarget.value = '';
+              }} />
+            </label>
+            <label className="smartScanAction">
+              <Images />
+              <span><b>Dateien oder Seiten wählen</b><small>PDF, JPG oder PNG · Mehrfachauswahl möglich</small></span>
+              <input className="nativeFileInput" multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
+                void addFiles(event.currentTarget.files);
+                event.currentTarget.value = '';
+              }} />
+            </label>
+          </div>
+          <div className="smartScanPromise">
+            <WandSparkles />
+            <span><b>Smart Scan arbeitet lokal</b><small>Bildoptimierung · Dokumenttyp · sensible Daten · richtige Reihenfolge</small></span>
+          </div>
           <h3>Empfohlene Unterlagen</h3>
           <div className="folderProgress">
             <div><b>{completion}% vollständig</b><small>{completedRequired} von {required.length} Kategorien vorhanden</small></div>
@@ -2064,8 +2190,8 @@ function App() {
               <label className={assigned ? 'recommendedDoc ready' : 'recommendedDoc'} key={item}>
                 <FileText />
                 <span><b>{item}</b><small>{assigned?.name ?? 'Noch nicht hinzugefügt'}</small></span>
-                <input className="nativeFileInput" multiple={item === 'Gehaltsnachweise'} type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
-                  addFiles(event.currentTarget.files, item);
+                <input className="nativeFileInput" multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
+                  void addFiles(event.currentTarget.files, item);
                   event.currentTarget.value = '';
                 }} />
                 {assigned ? <Check /> : <Plus />}
@@ -2091,7 +2217,7 @@ function App() {
                             <span>{(doc.size / 1048576).toFixed(2)} MB</span>
                             <span className={scan?.status === 'done' ? 'fileCheckState checked' : 'fileCheckState pending'}>
                               {scan?.status === 'done'
-                                ? `${scan.classification?.type ?? 'Sonstiges'} · ${scan.detections.length} Treffer`
+                                ? `${scan.classification?.type ?? 'Sonstiges'} · ${scan.pdfPages?.length ?? 1} Seite(n) · ${scan.detections.length} Treffer`
                                 : 'Noch nicht geprüft'}
                             </span>
                           </small>
@@ -2100,6 +2226,24 @@ function App() {
                         <ChevronRight className="selectedFileChevron" />
                       </button>
                       <button className="selectedFileRemove" onClick={() => removeDoc(doc.id)} aria-label={`${doc.name} entfernen`}><X /></button>
+                      <div className="selectedFilePageActions">
+                        <label className={combiningDocumentId === doc.id ? 'pageAction disabled' : 'pageAction'}>
+                          {combiningDocumentId === doc.id ? <LoaderCircle className="spin" /> : <Camera />}
+                          <span>{combiningDocumentId === doc.id ? 'Wird verbunden …' : 'Seite fotografieren'}</span>
+                          <input className="nativeFileInput" disabled={combiningDocumentId === doc.id} type="file" accept="image/*" capture="environment" onChange={(event) => {
+                            void appendPagesToDocument(doc.id, event.currentTarget.files);
+                            event.currentTarget.value = '';
+                          }} />
+                        </label>
+                        <label className={combiningDocumentId === doc.id ? 'pageAction disabled' : 'pageAction'}>
+                          <Images />
+                          <span>Seiten hinzufügen</span>
+                          <input className="nativeFileInput" disabled={combiningDocumentId === doc.id} multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
+                            void appendPagesToDocument(doc.id, event.currentTarget.files);
+                            event.currentTarget.value = '';
+                          }} />
+                        </label>
+                      </div>
                     </article>
                   );
                 })}
@@ -2160,11 +2304,12 @@ function App() {
             <div><b>Prüffortschritt: {batchProgress.completed} von {batchProgress.total}</b><small>{batchScanning ? 'Mezax arbeitet Dokument für Dokument' : 'Alle hinzugefügten Dateien geprüft'}</small></div>
             <div className="progressTrack"><span style={{ width: batchProgress.percent + '%' }} /></div>
           </div>
-          <div className="analysis">
-            <div><Check /> Dokumente hinzugefügt</div>
-            <div><Check /> Bilder und PDFs bleiben lokal</div>
-            <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} OCR und Dokumenttyp-Erkennung</div>
-            <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} Datenschutzempfehlungen vorbereitet</div>
+          <div className="analysis smartScanPipeline">
+            <div><Check /> Dokumente sicher lokal hinzugefügt</div>
+            <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} Bilder optimiert und Seiten erfasst</div>
+            <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} Dokumenttypen automatisch erkannt</div>
+            <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} Sensible Daten, QR-Codes und Barcodes geprüft</div>
+            <div className={allCompleted ? '' : 'pending'}>{allCompleted ? <Check /> : <i />} Unterlagen automatisch geordnet</div>
           </div>
           {allCompleted ? (
             <button className="primary" onClick={() => setScreen('result')}>Ergebnis anzeigen</button>

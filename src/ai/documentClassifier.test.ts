@@ -1,4 +1,4 @@
-import { classifyDocument } from './documentClassifier';
+import { classifyDocument } from './documentClassifier.ts';
 
 const cases = [
   ['Anschreiben', 'Sehr geehrte Damen und Herren Bewerbung um die Wohnung nach unserer Besichtigung'],

@@ -1,4 +1,4 @@
-import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './privacyRecommendations';
+import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './privacyRecommendations.ts';
 
 for (const label of ['Steuer-ID', 'Sozialversicherungsnummer', 'Ausweisnummer', 'Maschinenlesbare Zone (MRZ)', 'IBAN']) {
   const recommendation = getRentalPrivacyRecommendation(label);
@@ -7,6 +7,16 @@ for (const label of ['Steuer-ID', 'Sozialversicherungsnummer', 'Ausweisnummer', 
   }
 }
 
+
+const machineCode = getRentalPrivacyRecommendation('QR-Code / Barcode');
+if (machineCode.action !== 'redact' || machineCode.level !== 'high') {
+  throw new Error('QR-Codes und Barcodes muessen als sensible maschinenlesbare Daten behandelt werden.');
+}
+
+const signature = getRentalPrivacyRecommendation('Unterschrift');
+if (signature.action !== 'review') {
+  throw new Error('Unterschriften duerfen nicht ungefragt automatisch geschwaerzt werden.');
+}
 const unknown = getRentalPrivacyRecommendation('Unbekanntes Feld', 'Sonstiges');
 if (unknown.action !== 'review') throw new Error('Unbekannte Felder müssen eine manuelle Prüfung verlangen.');
 

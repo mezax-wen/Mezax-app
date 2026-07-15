@@ -1,4 +1,4 @@
-import { findIdentityDocumentNumber, findLabeledIdentityDocumentNumber, findValidIbans, isMachineReadableZoneLine, isValidIban, shouldDetectGermanTaxId, shouldDetectSocialSecurityNumber } from './sensitiveValidators';
+import { findIdentityDocumentNumber, findLabeledIdentityDocumentNumber, findValidIbans, isMachineReadableZoneLine, isValidIban, shouldDetectGermanTaxId, shouldDetectSocialSecurityNumber } from './sensitiveValidators.ts';
 
 if (!isValidIban('DE89 3704 0044 0532 0130 00')) throw new Error('Gültige Test-IBAN wurde abgelehnt.');
 if (isValidIban('DE89 3704 0044 0532 0130 01')) throw new Error('IBAN mit falscher Prüfziffer wurde akzeptiert.');

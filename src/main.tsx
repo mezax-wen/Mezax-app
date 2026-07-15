@@ -1923,22 +1923,28 @@ function App() {
           {docs.length > 0 && (
             <>
               <h3>Ausgewählte Dateien</h3>
-              <div className="list">
+              <div className="selectedFilesList">
                 {docs.map((doc) => {
                   const scan = scans[doc.id];
                   const assignmentReview = reviewDocumentAssignment(doc.slot, scan?.classification);
                   return (
-                    <div key={doc.id}>
-                      <FileText />
-                      <span>
-                        <b>{doc.name}</b>
-                        <small>{doc.slot ? `${doc.slot} · ` : ''}</small>
-                        <small>{(doc.size / 1048576).toFixed(2)} MB{scan?.status === 'done' ? ` · ${scan.classification?.type ?? 'Sonstiges'} (${scan.classification?.confidence ?? 0}%) · ${scan.detections.length} Treffer` : ''}</small>
-                        {assignmentReview.status === 'mismatch' && <small className="assignmentMismatch">⚠ {assignmentReview.message}</small>}
-                      </span>
-                      <button className="openBtn" onClick={() => openPreview(doc)}>Öffnen</button>
-                      <button className="icon" onClick={() => removeDoc(doc.id)} aria-label="Datei entfernen"><X /></button>
-                    </div>
+                    <article className="selectedFileCard" key={doc.id}>
+                      <button className="selectedFileOpen" onClick={() => openPreview(doc)} aria-label={`${doc.name} öffnen`}>
+                        <span className="selectedFileIcon"><FileText /></span>
+                        <span className="selectedFileInfo">
+                          <b title={doc.name}>{doc.name}</b>
+                          <small className="selectedFileSlot">{doc.slot ?? 'Nicht zugeordnet'}</small>
+                          <small className="selectedFileStatus">
+                            {(doc.size / 1048576).toFixed(2)} MB · {scan?.status === 'done'
+                              ? `${scan.classification?.type ?? 'Sonstiges'} · ${scan.detections.length} Treffer`
+                              : 'Noch nicht geprüft'}
+                          </small>
+                          {assignmentReview.status === 'mismatch' && <small className="assignmentMismatch">⚠ {assignmentReview.message}</small>}
+                        </span>
+                        <ChevronRight className="selectedFileChevron" />
+                      </button>
+                      <button className="selectedFileRemove" onClick={() => removeDoc(doc.id)} aria-label={`${doc.name} entfernen`}><X /></button>
+                    </article>
                   );
                 })}
               </div>

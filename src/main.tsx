@@ -29,7 +29,7 @@ import LandingPage from './landing/LandingPage';
 import { classifyDocument, type DocumentClassification } from './ai/documentClassifier';
 import { findIdentityDocumentNumber, findLabeledIdentityDocumentNumber, findValidIbans, isMachineReadableZoneLine, shouldDetectGermanTaxId, shouldDetectSocialSecurityNumber } from './ai/sensitiveValidators';
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
-import { folderCompleteness, rentalWatermark, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
+import { assignAndSortFolderDocument, folderCompleteness, rentalWatermark, requiredDocumentOrder, safeFolderFileName, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
@@ -776,7 +776,7 @@ function App() {
   }
 
   function correctDocumentAssignment(docId: number, slot: RequiredDocument) {
-    setDocs((current) => current.map((doc) => doc.id === docId ? { ...doc, slot } : doc));
+    setDocs((current) => assignAndSortFolderDocument(current, docId, slot));
     setPreview((current) => current?.id === docId ? { ...current, slot } : current);
   }
 
@@ -848,8 +848,9 @@ function App() {
       const detections = detectSensitiveData(words);
       const classification = classifyDocument(data.text ?? '');
       const inferredSlot = slotForClassification(classification.type);
-      if (inferredSlot) {
-        setDocs((current) => current.map((item) => item.id === doc.id ? { ...item, slot: item.slot ?? inferredSlot } : item));
+      if (inferredSlot && classification.confidence >= 65) {
+        setDocs((current) => assignAndSortFolderDocument(current, doc.id, inferredSlot));
+        setPreview((current) => current?.id === doc.id ? { ...current, slot: inferredSlot } : current);
       }
 
       setScans((current) => ({

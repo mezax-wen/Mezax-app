@@ -842,18 +842,24 @@ function App() {
       setUploadNotice('');
     }
 
-    setDocs(sortFolderDocuments([
-      ...current,
-      ...allowedFiles.map((file, index) => ({
-        id: Date.now() + index,
-        name: file.name,
-        size: file.size,
-        type: file.type || '',
-        url: URL.createObjectURL(file),
-        file,
-        slot,
-      })),
-    ]));
+    const addedDocuments: Doc[] = allowedFiles.map((file, index) => ({
+      id: Date.now() + index,
+      name: file.name,
+      size: file.size,
+      type: file.type || '',
+      url: URL.createObjectURL(file),
+      file,
+      slot,
+    }));
+    setDocs(sortFolderDocuments([...current, ...addedDocuments]));
+    void scanDocumentsSequentially(addedDocuments, true);
+  }
+
+  async function scanDocumentsSequentially(documents: Doc[], announce = false) {
+    if (!documents.length) return;
+    if (announce) setUploadNotice(`Smart Scan prüft ${documents.length} Dokument(e) automatisch …`);
+    for (const document of documents) await scanDocument(document);
+    if (announce) setUploadNotice('Smart Scan abgeschlossen. Bitte kontrolliere die Ergebnisse.');
   }
 
   async function appendPagesToDocument(docId: number, fileList: FileList | null) {
@@ -889,7 +895,8 @@ function App() {
         delete next[docId];
         return next;
       });
-      setUploadNotice(`${extraPages.length} Seite(n) hinzugefügt. Das Dokument wird beim nächsten Öffnen neu geprüft.`);
+      setUploadNotice(`${extraPages.length} Seite(n) hinzugefügt. Smart Scan prüft das Dokument erneut …`);
+      void scanDocument(updated, true);
     } catch (error) {
       setUploadNotice(error instanceof Error ? error.message : 'Die weiteren Seiten konnten nicht hinzugefügt werden.');
     } finally {
@@ -929,11 +936,11 @@ function App() {
     setDocs(assignAndSortFolderDocument(docs, docId, slot));
   }
 
-  async function scanDocument(doc: Doc) {
+  async function scanDocument(doc: Doc, force = false) {
     const isImage = doc.type.startsWith('image/');
     const isPdf = doc.type === 'application/pdf' || doc.name.toLowerCase().endsWith('.pdf');
     if (!isImage && !isPdf) return;
-    if (scans[doc.id]?.status === 'loading' || scans[doc.id]?.status === 'done') return;
+    if (!force && (scans[doc.id]?.status === 'loading' || scans[doc.id]?.status === 'done')) return;
 
     setScans((current) => ({
       ...current,
@@ -2215,10 +2222,14 @@ function App() {
                           <small className="selectedFileSlot">{doc.slot ?? 'Nicht zugeordnet'}</small>
                           <small className="selectedFileStatus">
                             <span>{(doc.size / 1048576).toFixed(2)} MB</span>
-                            <span className={scan?.status === 'done' ? 'fileCheckState checked' : 'fileCheckState pending'}>
+                            <span className={`fileCheckState ${scan?.status === 'done' ? 'checked' : scan?.status === 'loading' ? 'scanning' : scan?.status === 'error' ? 'error' : 'pending'}`}>
                               {scan?.status === 'done'
                                 ? `${scan.classification?.type ?? 'Sonstiges'} · ${scan.pdfPages?.length ?? 1} Seite(n) · ${scan.detections.length} Treffer`
-                                : 'Noch nicht geprüft'}
+                                : scan?.status === 'loading'
+                                  ? `Smart Scan ${Math.max(1, Math.round(scan.progress * 100))}%`
+                                  : scan?.status === 'error'
+                                    ? 'Prüfung fehlgeschlagen'
+                                    : 'Noch nicht geprüft'}
                             </span>
                           </small>
                           {assignmentReview.status === 'mismatch' && <small className="assignmentMismatch">⚠ {assignmentReview.message}</small>}

@@ -35,6 +35,7 @@ import { createManualBox, toDocumentPoint, type DocumentPoint } from './applicat
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
+import { loadApplicantProfile, saveApplicantProfile, type ApplicantProfile } from './application/applicantProfile';
 import {
   listApplicationDrafts,
   loadApplicationDraft,
@@ -46,7 +47,7 @@ import {
 
 const publicAsset = (fileName: string) => import.meta.env.BASE_URL + fileName;
 
-type Screen = 'welcome' | 'dashboard' | 'folders' | 'new' | 'documents' | 'check' | 'result' | 'export';
+type Screen = 'welcome' | 'dashboard' | 'folders' | 'profile' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
 
 type Doc = {
@@ -434,6 +435,9 @@ function App() {
   const [applicantPhone, setApplicantPhone] = useState('');
   const [applicantCurrentAddress, setApplicantCurrentAddress] = useState('');
   const [applicantPhoto, setApplicantPhoto] = useState<{ name: string; url: string; file: File } | null>(null);
+  const [applicantProfile, setApplicantProfile] = useState<ApplicantProfile>(() => loadApplicantProfile());
+  const [profileDraft, setProfileDraft] = useState<ApplicantProfile>(applicantProfile);
+  const [profileStatus, setProfileStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [preparedFolder, setPreparedFolder] = useState<PreparedPdf | null>(null);
   const [preparedPdfPreview, setPreparedPdfPreview] = useState<PreparedPdfPreview | null>(null);
   const [fixed, setFixed] = useState(false);
@@ -616,9 +620,39 @@ function App() {
     setApplicantPhoto(null);
   }
 
+  function openProfile() {
+    setProfileDraft(applicantProfile);
+    setProfileStatus('idle');
+    setScreen('profile');
+  }
+
+  function updateProfileField(field: keyof ApplicantProfile, value: string) {
+    setProfileDraft((current) => ({ ...current, [field]: value }));
+    setProfileStatus('idle');
+  }
+
+  function persistApplicantProfile() {
+    try {
+      const saved = saveApplicantProfile(profileDraft);
+      setApplicantProfile(saved);
+      setProfileDraft(saved);
+      setApplicantName(saved.name);
+      setApplicantEmail(saved.email);
+      setApplicantPhone(saved.phone);
+      setApplicantCurrentAddress(saved.currentAddress);
+      setProfileStatus('saved');
+    } catch {
+      setProfileStatus('error');
+    }
+  }
+
   function startNewDraft() {
     setDraftActive(false);
     resetWorkspace();
+    setApplicantName(applicantProfile.name);
+    setApplicantEmail(applicantProfile.email);
+    setApplicantPhone(applicantProfile.phone);
+    setApplicantCurrentAddress(applicantProfile.currentAddress);
     setDraftId(createDraftId());
     setDraftStatus('idle');
     setDraftError('');
@@ -1637,14 +1671,80 @@ function App() {
     );
   }
 
+  if (screen === 'profile') {
+    return (
+      <main className="app">
+        <Header name="Profil" back="dashboard" />
+        <section className="content profilePage">
+          <div className="profileIntro">
+            <div className="profileAvatar"><UserRound /></div>
+            <div>
+              <h2>Deine Bewerberdaten</h2>
+              <p className="muted">Diese Angaben werden für neue Deckblätter vorausgefüllt.</p>
+            </div>
+          </div>
+          <div className="profileFields">
+            <label>Vor- und Nachname
+              <input
+                value={profileDraft.name}
+                onChange={(event) => updateProfileField('name', event.target.value)}
+                placeholder="z. B. Erika Musterfrau"
+                autoComplete="name"
+              />
+            </label>
+            <label>E-Mail <span className="optionalMark">Optional</span>
+              <input
+                type="email"
+                value={profileDraft.email}
+                onChange={(event) => updateProfileField('email', event.target.value)}
+                placeholder="name@beispiel.de"
+                autoComplete="email"
+              />
+            </label>
+            <label>Telefonnummer <span className="optionalMark">Optional</span>
+              <input
+                type="tel"
+                value={profileDraft.phone}
+                onChange={(event) => updateProfileField('phone', event.target.value)}
+                placeholder="+49 …"
+                autoComplete="tel"
+              />
+            </label>
+            <label>Deine aktuelle Wohnadresse <span className="optionalMark">Optional</span>
+              <input
+                value={profileDraft.currentAddress}
+                onChange={(event) => updateProfileField('currentAddress', event.target.value)}
+                placeholder="Straße, PLZ Ort"
+                autoComplete="street-address"
+              />
+              <small className="fieldHint">Gemeint ist deine eigene Adresse – nicht die Wohnung, auf die du dich bewirbst.</small>
+            </label>
+          </div>
+          <button className="primary profileSave" onClick={persistApplicantProfile}>
+            <Check /> Profil lokal speichern
+          </button>
+          {profileStatus === 'saved' && <p className="profileMessage successMessage"><Check /> Gespeichert und für neue Mappen übernommen.</p>}
+          {profileStatus === 'error' && <p className="profileMessage errorMessage"><AlertTriangle /> Das Profil konnte auf diesem Gerät nicht gespeichert werden.</p>}
+          <div className="info profilePrivacy"><LockKeyhole /><p><b>Nur auf diesem Gerät</b><small>Mezax lädt diese Profildaten nicht in eine Cloud. Ein Bewerberfoto wählst du weiterhin bewusst pro Mappe aus.</small></p></div>
+        </section>
+        <nav>
+          <button onClick={() => setScreen('dashboard')}><Home /><small>Übersicht</small></button>
+          <button onClick={() => setScreen('folders')}><FileText /><small>Mappen</small></button>
+          <button onClick={() => setScreen('check')}><ShieldCheck /><small>Check</small></button>
+          <button className="active"><UserRound /><small>Profil</small></button>
+        </nav>
+      </main>
+    );
+  }
+
   if (screen === 'dashboard') {
     return (
       <main className="app">
         <Header name="Übersicht" />
         <section className="content">
           <div className="greet">
-            <div><p>Willkommen</p><h2>Deine Bewerbungen</h2></div>
-            <div className="avatar"><UserRound /></div>
+            <div><p>{applicantProfile.name ? 'Willkommen, ' + applicantProfile.name : 'Willkommen'}</p><h2>Deine Bewerbungen</h2></div>
+            <button className="avatar" onClick={openProfile} aria-label="Profil öffnen"><UserRound /></button>
           </div>
           <button className="primary big" onClick={startNewDraft}><Plus /> Neue Bewerbungsmappe</button>
           <h3>Meine Mappen</h3>
@@ -1693,7 +1793,7 @@ function App() {
           <button className="active"><Home /><small>Übersicht</small></button>
           <button onClick={() => setScreen('folders')}><FileText /><small>Mappen</small></button>
           <button onClick={() => setScreen('check')}><ShieldCheck /><small>Check</small></button>
-          <button><UserRound /><small>Profil</small></button>
+          <button onClick={openProfile}><UserRound /><small>Profil</small></button>
         </nav>
       </main>
     );
@@ -1745,7 +1845,7 @@ function App() {
           <button onClick={() => setScreen('dashboard')}><Home /><small>Übersicht</small></button>
           <button className="active"><FileText /><small>Mappen</small></button>
           <button onClick={() => setScreen('check')}><ShieldCheck /><small>Check</small></button>
-          <button disabled><UserRound /><small>Profil</small></button>
+          <button onClick={openProfile}><UserRound /><small>Profil</small></button>
         </nav>
       </main>
     );
@@ -1870,7 +1970,7 @@ function App() {
             <button onClick={() => setScreen('dashboard')}><Home /><small>Übersicht</small></button>
             <button onClick={() => setScreen('folders')}><FileText /><small>Mappen</small></button>
             <button className="active"><ShieldCheck /><small>Check</small></button>
-            <button disabled><UserRound /><small>Profil</small></button>
+            <button onClick={openProfile}><UserRound /><small>Profil</small></button>
           </nav>
         </main>
       );

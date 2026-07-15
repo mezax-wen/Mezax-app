@@ -1692,7 +1692,7 @@ function App() {
         <nav>
           <button className="active"><Home /><small>Übersicht</small></button>
           <button onClick={() => setScreen('folders')}><FileText /><small>Mappen</small></button>
-          <button><ShieldCheck /><small>Check</small></button>
+          <button onClick={() => setScreen('check')}><ShieldCheck /><small>Check</small></button>
           <button><UserRound /><small>Profil</small></button>
         </nav>
       </main>
@@ -1744,7 +1744,7 @@ function App() {
         <nav>
           <button onClick={() => setScreen('dashboard')}><Home /><small>Übersicht</small></button>
           <button className="active"><FileText /><small>Mappen</small></button>
-          <button disabled={!docs.length} onClick={() => docs.length && setScreen('check')}><ShieldCheck /><small>Check</small></button>
+          <button onClick={() => setScreen('check')}><ShieldCheck /><small>Check</small></button>
           <button disabled><UserRound /><small>Profil</small></button>
         </nav>
       </main>
@@ -1852,6 +1852,30 @@ function App() {
   }
 
   if (screen === 'check') {
+    if (!docs.length) {
+      return (
+        <main className="app">
+          <Header name="Mezax Check" back="dashboard" />
+          <section className="content center checkEmpty">
+            <div className="ring"><ShieldCheck /></div>
+            <h2>Welche Mappe möchtest du prüfen?</h2>
+            <p className="muted">Öffne eine gespeicherte Bewerbung oder erstelle eine neue Mappe. Danach prüft Mezax alle hinzugefügten Dokumente lokal.</p>
+            <div className="checkEmptyActions">
+              <button className="primary" onClick={() => setScreen('folders')}><FileText /> Gespeicherte Mappe auswählen</button>
+              <button className="secondary" onClick={startNewDraft}><Plus /> Neue Bewerbungsmappe</button>
+            </div>
+            <div className="info localStorageInfo"><ShieldCheck /><p><b>Deine Dokumente bleiben lokal</b><small>Ohne geöffnete Mappe beginnt Mezax keine Prüfung.</small></p></div>
+          </section>
+          <nav>
+            <button onClick={() => setScreen('dashboard')}><Home /><small>Übersicht</small></button>
+            <button onClick={() => setScreen('folders')}><FileText /><small>Mappen</small></button>
+            <button className="active"><ShieldCheck /><small>Check</small></button>
+            <button disabled><UserRound /><small>Profil</small></button>
+          </nav>
+        </main>
+      );
+    }
+
     const allCompleted = docs.length > 0 && batchProgress.completed === docs.length;
     return (
       <main className="app">

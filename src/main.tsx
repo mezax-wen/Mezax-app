@@ -2041,6 +2041,29 @@ function App() {
               <div key={label}><ShieldCheck /><span><b>{label}</b><small>{count} Fundstelle(n)</small></span><em>Prüfen</em></div>
             )) : <div><AlertTriangle /><span><b>Keine Ergebnisse</b><small>Es wurde noch nichts erkannt oder geprüft.</small></span></div>}
           </div>
+          <h3>Reihenfolge der Mappe</h3>
+          <p className="sortReviewIntro">Mezax hat erkannte Unterlagen automatisch sortiert. Tippe auf eine Datei, um die Zuordnung vor dem Export zu kontrollieren.</p>
+          <div className="sortReviewList">
+            {sortFolderDocuments(docs).map((doc, index) => {
+              const scan = scans[doc.id];
+              const detectedSlot = scan?.classification && scan.classification.confidence >= 65
+                ? slotForClassification(scan.classification.type)
+                : undefined;
+              const confirmed = scan?.status === 'done' && Boolean(detectedSlot) && detectedSlot === doc.slot;
+              return (
+                <button type="button" className="sortReviewItem" key={doc.id} onClick={() => openPreview(doc)}>
+                  <strong>{index + 1}</strong>
+                  <span className="sortReviewInfo">
+                    <b>{doc.slot ?? 'Nicht zugeordnet'}</b>
+                    <small title={doc.name}>{doc.name}</small>
+                  </span>
+                  <em className={`sortReviewState ${confirmed ? 'confirmed' : 'attention'}`}>
+                    {confirmed ? 'Erkannt' : 'Bitte prüfen'}
+                  </em>
+                </button>
+              );
+            })}
+          </div>
           <label>Wasserzeichen<input value={watermark} onChange={(event) => {
             setWatermark(event.target.value);
             setWatermarkCustomized(true);

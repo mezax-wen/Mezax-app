@@ -1,4 +1,4 @@
-import { folderCompleteness, rentalWatermark, safeFolderFileName, sortFolderDocuments } from './folderPlan.ts';
+import { assignAndSortFolderDocument, folderCompleteness, rentalWatermark, safeFolderFileName, sortFolderDocuments } from './folderPlan.ts';
 
 const documents = [
   { name: 'ausweis.pdf', slot: 'Ausweiskopie' as const },
@@ -9,6 +9,14 @@ const documents = [
 const sorted = sortFolderDocuments(documents);
 if (sorted[0].slot !== 'Anschreiben' || sorted[2].slot !== 'Ausweiskopie') {
   throw new Error('Dokumente werden nicht in der vorgesehenen Bewerbungsreihenfolge sortiert.');
+}
+
+const automaticallySorted = assignAndSortFolderDocument([
+  { id: 1, name: 'unbekannt.pdf', slot: 'Ausweiskopie' as const },
+  { id: 2, name: 'gehalt.pdf', slot: 'Gehaltsnachweise' as const },
+], 1, 'Anschreiben');
+if (automaticallySorted[0].id !== 1 || automaticallySorted[0].slot !== 'Anschreiben') {
+  throw new Error('Sicher erkannte Dokumente werden nicht neu zugeordnet und einsortiert.');
 }
 
 const completeness = folderCompleteness(documents);

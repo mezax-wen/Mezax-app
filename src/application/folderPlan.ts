@@ -16,6 +16,16 @@ export function sortFolderDocuments<T extends { slot?: RequiredDocument; name: s
   });
 }
 
+export function assignAndSortFolderDocument<T extends { id: number; slot?: RequiredDocument; name: string }>(
+  documents: T[],
+  documentId: number,
+  detectedSlot: RequiredDocument,
+) {
+  return sortFolderDocuments(
+    documents.map((document) => document.id === documentId ? { ...document, slot: detectedSlot } : document),
+  );
+}
+
 export function folderCompleteness(documents: Array<{ slot?: RequiredDocument }>) {
   const completedSlots = new Set(documents.flatMap((document) => document.slot ? [document.slot] : []));
   const completed = completedSlots.size;

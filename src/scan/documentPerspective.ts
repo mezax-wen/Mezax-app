@@ -8,6 +8,16 @@ export type DocumentCorners = {
   bottomRight: ScanPoint;
   bottomLeft: ScanPoint;
 };
+export type DocumentCornerAnalysis = {
+  corners: DocumentCorners;
+  width: number;
+  height: number;
+  automatic: boolean;
+  message: string;
+};
+export type DocumentCornerDetectionMeta = {
+  source: 'line-detection' | 'bounds-fallback';
+};
 type PixelPoint = ScanPoint;
 
 const clamp = (value: number, minimum = 0, maximum = 1) => Math.min(maximum, Math.max(minimum, value));
@@ -65,11 +75,63 @@ function polygonArea(corners: DocumentCorners) {
   }, 0) / 2);
 }
 
+const SAFE_FULL_FRAME_CORNERS: DocumentCorners = {
+  topLeft: { x: 0.005, y: 0.005 },
+  topRight: { x: 0.995, y: 0.005 },
+  bottomRight: { x: 0.995, y: 0.995 },
+  bottomLeft: { x: 0.005, y: 0.995 },
+};
+
+function crossProduct(first: ScanPoint, second: ScanPoint, third: ScanPoint) {
+  return (second.x - first.x) * (third.y - second.y)
+    - (second.y - first.y) * (third.x - second.x);
+}
+
+export function isValidDocumentCorners(corners: DocumentCorners) {
+  const points = [corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft];
+  if (points.some((point) => (
+    !Number.isFinite(point.x)
+    || !Number.isFinite(point.y)
+    || point.x < 0
+    || point.x > 1
+    || point.y < 0
+    || point.y > 1
+  ))) return false;
+
+  const turns = points.map((point, index) => crossProduct(
+    point,
+    points[(index + 1) % points.length],
+    points[(index + 2) % points.length],
+  ));
+  const convex = turns.every((turn) => turn > 0.0005) || turns.every((turn) => turn < -0.0005);
+  if (!convex) return false;
+  const edges = points.map((point, index) => distance(point, points[(index + 1) % points.length]));
+  return polygonArea(corners) >= 0.02 && edges.every((edge) => edge >= 0.06);
+}
+
+export function isSafeAutomaticCrop(corners: DocumentCorners) {
+  if (!isValidDocumentCorners(corners)) return false;
+  const topWidth = distance(corners.topLeft, corners.topRight);
+  const bottomWidth = distance(corners.bottomLeft, corners.bottomRight);
+  const leftHeight = distance(corners.topLeft, corners.bottomLeft);
+  const rightHeight = distance(corners.topRight, corners.bottomRight);
+  const reachesGuideEdges = Math.max(corners.topLeft.x, corners.bottomLeft.x) <= 0.06
+    && Math.min(corners.topRight.x, corners.bottomRight.x) >= 0.94
+    && Math.max(corners.topLeft.y, corners.topRight.y) <= 0.06
+    && Math.min(corners.bottomLeft.y, corners.bottomRight.y) >= 0.94;
+  return reachesGuideEdges
+    && polygonArea(corners) >= 0.84
+    && Math.min(topWidth, bottomWidth) >= 0.88
+    && Math.min(leftHeight, rightHeight) >= 0.88;
+}
+
 export function findDocumentCorners(
   pixels: Uint8ClampedArray,
   width: number,
   height: number,
+  metadata?: DocumentCornerDetectionMeta,
 ): DocumentCorners {
+  if (metadata) metadata.source = 'bounds-fallback';
   const bounds = findDocumentBounds(pixels, width, height);
   if (!width || !height || pixels.length < width * height * 4) {
     return normalizedBoundsCorners(bounds, Math.max(1, width), Math.max(1, height));
@@ -135,20 +197,28 @@ export function findDocumentCorners(
   if (!leftLine || !rightLine || !topLine || !bottomLine) return fallback;
 
   const toNormalized = (point: PixelPoint): ScanPoint => ({
-    x: clamp(point.x / width),
-    y: clamp(point.y / height),
+    x: point.x / width,
+    y: point.y / height,
   });
-  const detected: DocumentCorners = {
+  const rawDetected: DocumentCorners = {
     topLeft: toNormalized(intersectVerticalHorizontal(leftLine, topLine)),
     topRight: toNormalized(intersectVerticalHorizontal(rightLine, topLine)),
     bottomRight: toNormalized(intersectVerticalHorizontal(rightLine, bottomLine)),
     bottomLeft: toNormalized(intersectVerticalHorizontal(leftLine, bottomLine)),
   };
-  const valid = polygonArea(detected) >= 0.24
-    && detected.topLeft.x < detected.topRight.x
-    && detected.bottomLeft.x < detected.bottomRight.x
-    && detected.topLeft.y < detected.bottomLeft.y
-    && detected.topRight.y < detected.bottomRight.y;
+  const rawPoints = [rawDetected.topLeft, rawDetected.topRight, rawDetected.bottomRight, rawDetected.bottomLeft];
+  const withinOverscan = rawPoints.every((point) => (
+    point.x >= -0.03 && point.x <= 1.03 && point.y >= -0.03 && point.y <= 1.03
+  ));
+  const clampPoint = (point: ScanPoint): ScanPoint => ({ x: clamp(point.x), y: clamp(point.y) });
+  const detected: DocumentCorners = {
+    topLeft: clampPoint(rawDetected.topLeft),
+    topRight: clampPoint(rawDetected.topRight),
+    bottomRight: clampPoint(rawDetected.bottomRight),
+    bottomLeft: clampPoint(rawDetected.bottomLeft),
+  };
+  const valid = withinOverscan && polygonArea(detected) >= 0.24 && isValidDocumentCorners(detected);
+  if (valid && metadata) metadata.source = 'line-detection';
   return valid ? detected : fallback;
 }
 
@@ -161,7 +231,7 @@ function loadImage(url: string) {
   });
 }
 
-export async function analyzeDocumentCorners(url: string) {
+export async function analyzeDocumentCorners(url: string): Promise<DocumentCornerAnalysis> {
   const image = await loadImage(url);
   const scale = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
   const canvas = document.createElement('canvas');
@@ -171,10 +241,17 @@ export async function analyzeDocumentCorners(url: string) {
   if (!context) throw new Error('Die lokale Kantenerkennung ist auf diesem Gerät nicht verfügbar.');
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   const data = context.getImageData(0, 0, canvas.width, canvas.height);
+  const metadata: DocumentCornerDetectionMeta = { source: 'bounds-fallback' };
+  const candidate = findDocumentCorners(data.data, canvas.width, canvas.height, metadata);
+  const automatic = metadata.source === 'line-detection' && isSafeAutomaticCrop(candidate);
   return {
-    corners: findDocumentCorners(data.data, canvas.width, canvas.height),
+    corners: automatic ? candidate : SAFE_FULL_FRAME_CORNERS,
     width: image.naturalWidth,
     height: image.naturalHeight,
+    automatic,
+    message: automatic
+      ? 'Blattränder sicher erkannt.'
+      : 'Das Blatt wurde nicht sicher erkannt. Das vollständige Foto bleibt erhalten; bitte prüfe die Ecken.',
   };
 }
 
@@ -232,6 +309,9 @@ export async function renderDocumentScan(
   filter: ScanFilter,
   maxDimension = 2200,
 ) {
+  if (!isValidDocumentCorners(corners)) {
+    throw new Error('Die markierten Dokumentecken sind ungültig. Bitte ordne die vier Punkte neu an.');
+  }
   const image = await loadImage(url);
   const source = {
     topLeft: { x: corners.topLeft.x * image.naturalWidth, y: corners.topLeft.y * image.naturalHeight },

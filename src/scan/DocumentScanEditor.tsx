@@ -3,6 +3,7 @@ import { AlertTriangle, Camera, Check, LoaderCircle, Plus, ScanSearch, SlidersHo
 import {
   analyzeDocumentCorners,
   createScannedDocumentFile,
+  isValidDocumentCorners,
   previewFilter,
   type DocumentCorners,
   type ScanFilter,
@@ -23,10 +24,10 @@ type DocumentScanEditorProps = {
 };
 
 const defaultCorners: DocumentCorners = {
-  topLeft: { x: 0.04, y: 0.04 },
-  topRight: { x: 0.96, y: 0.04 },
-  bottomRight: { x: 0.96, y: 0.96 },
-  bottomLeft: { x: 0.04, y: 0.96 },
+  topLeft: { x: 0.005, y: 0.005 },
+  topRight: { x: 0.995, y: 0.005 },
+  bottomRight: { x: 0.995, y: 0.995 },
+  bottomLeft: { x: 0.005, y: 0.995 },
 };
 
 const filters: Array<{ id: ScanFilter; label: string }> = [
@@ -48,12 +49,14 @@ export default function DocumentScanEditor({
 }: DocumentScanEditorProps) {
   const [corners, setCorners] = useState<DocumentCorners>(defaultCorners);
   const [filter, setFilter] = useState<ScanFilter>('color');
-  const [analysisStatus, setAnalysisStatus] = useState<'loading' | 'done' | 'error'>('loading');
+  const [analysisStatus, setAnalysisStatus] = useState<'loading' | 'detected' | 'fallback' | 'error'>('loading');
+  const [analysisMessage, setAnalysisMessage] = useState('');
   const [qualityStatus, setQualityStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [quality, setQuality] = useState<ScanQualityResult | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const imageFrameRef = useRef<HTMLDivElement | null>(null);
+  const cornersValid = isValidDocumentCorners(corners);
 
   useEffect(() => {
     let active = true;
@@ -61,17 +64,21 @@ export default function DocumentScanEditor({
     setQuality(null);
     setQualityStatus('idle');
     setError('');
+    setAnalysisMessage('');
     analyzeDocumentCorners(sourceUrl)
       .then((result) => {
         if (!active) return;
         setCorners(result.corners);
-        setAnalysisStatus('done');
+        setAnalysisStatus(result.automatic ? 'detected' : 'fallback');
+        setAnalysisMessage(result.message);
       })
       .catch((reason) => {
         if (!active) return;
         setCorners(defaultCorners);
         setAnalysisStatus('error');
-        setError(reason instanceof Error ? reason.message : 'Dokumentränder konnten nicht erkannt werden.');
+        const message = reason instanceof Error ? reason.message : 'Dokumentränder konnten nicht erkannt werden.';
+        setAnalysisMessage(message);
+        setError(message);
       });
     return () => {
       active = false;
@@ -80,6 +87,11 @@ export default function DocumentScanEditor({
 
   useEffect(() => {
     if (analysisStatus === 'loading') return;
+    if (!cornersValid) {
+      setQuality(null);
+      setQualityStatus('error');
+      return;
+    }
     let active = true;
     const timer = window.setTimeout(() => {
       setQualityStatus('loading');
@@ -100,7 +112,7 @@ export default function DocumentScanEditor({
       active = false;
       window.clearTimeout(timer);
     };
-  }, [analysisStatus, corners, sourceUrl]);
+  }, [analysisStatus, corners, cornersValid, sourceUrl]);
 
   const updateCorner = (key: CornerKey, event: ReactPointerEvent<HTMLButtonElement>) => {
     const rect = imageFrameRef.current?.getBoundingClientRect();
@@ -125,6 +137,10 @@ export default function DocumentScanEditor({
   };
 
   const useScan = async (continueScanning = false) => {
+    if (!cornersValid) {
+      setError('Die vier Eckpunkte dürfen sich nicht kreuzen und müssen eine lesbare Fläche umschließen.');
+      return;
+    }
     if (processing) return;
     setProcessing(true);
     setError('');
@@ -148,6 +164,13 @@ export default function DocumentScanEditor({
   const qualityHint = quality?.metrics.find((metric) => metric.status === 'poor')
     ?? quality?.metrics.find((metric) => metric.status === 'check')
     ?? quality?.metrics[0];
+  const analysisTitle = !cornersValid
+    ? 'Ecken ungültig'
+    : analysisStatus === 'detected'
+    ? 'Blatt sicher erkannt'
+    : analysisStatus === 'fallback'
+      ? 'Ecken bitte prüfen'
+      : analysisStatus === 'loading' ? 'Blatterkennung läuft …' : 'Ecken manuell prüfen';
 
   return (
     <div className="scanEditorOverlay" role="dialog" aria-modal="true" aria-label="Dokumentscan bearbeiten">
@@ -198,8 +221,14 @@ export default function DocumentScanEditor({
         <div className="scanEditorStatus">
           <ScanSearch />
           <span>
-            <b>{analysisStatus === 'done' ? 'Dokumentränder erkannt' : 'Ecken prüfen'}</b>
-            <small>Ziehe die vier türkisen Punkte genau auf die Blattecken.</small>
+            <b>{analysisTitle}</b>
+            <small>{!cornersValid
+              ? 'Ordne die Punkte im Uhrzeigersinn an: oben links, oben rechts, unten rechts, unten links.'
+              : analysisMessage || (
+              analysisStatus === 'loading'
+                ? 'Das Foto wird nur lokal auf deinem Gerät geprüft.'
+                : 'Ziehe die vier türkisen Punkte genau auf die Blattecken.'
+            )}</small>
           </span>
         </div>
 
@@ -252,11 +281,11 @@ export default function DocumentScanEditor({
             <Camera /> Neu
           </button>
           {onUseAndContinue && (
-            <button className="secondary scanNextAction" type="button" onClick={() => void useScan(true)} disabled={processing || analysisStatus === 'loading'}>
+            <button className="secondary scanNextAction" type="button" onClick={() => void useScan(true)} disabled={processing || analysisStatus === 'loading' || !cornersValid}>
               <Plus /> Weitere Seite
             </button>
           )}
-          <button className="primary scanUseAction" type="button" onClick={() => void useScan()} disabled={processing || analysisStatus === 'loading'}>
+          <button className="primary scanUseAction" type="button" onClick={() => void useScan()} disabled={processing || analysisStatus === 'loading' || !cornersValid}>
             {processing ? <LoaderCircle className="spin" /> : <Check />}
             {processing ? 'Wird optimiert …' : quality?.level === 'retry' ? 'Trotzdem verwenden' : 'Scan verwenden'}
           </button>

@@ -1,4 +1,4 @@
-import { findDocumentCorners, previewFilter } from './documentPerspective.ts';
+import { findDocumentCorners, isSafeAutomaticCrop, isValidDocumentCorners, previewFilter, type DocumentCornerDetectionMeta } from './documentPerspective.ts';
 
 const width = 120;
 const height = 120;
@@ -49,4 +49,49 @@ assertNear(corners.bottomLeft.x, 12 / width, 'Unten links x');
 if (previewFilter('original') !== 'none') throw new Error('Originalfilter darf das Bild nicht verändern.');
 if (!previewFilter('blackwhite').includes('grayscale')) throw new Error('Schwarzweißvorschau muss Graustufen verwenden.');
 
+const almostFullFrame = {
+  topLeft: { x: 0.04, y: 0.03 },
+  topRight: { x: 0.96, y: 0.04 },
+  bottomRight: { x: 0.95, y: 0.97 },
+  bottomLeft: { x: 0.03, y: 0.96 },
+};
+if (!isSafeAutomaticCrop(almostFullFrame)) {
+  throw new Error('Ein vollständiges, konvexes Blatt muss als sicherer Zuschnitt gelten.');
+}
+
+const partialBrightRegion = {
+  topLeft: { x: 0.22, y: 0.18 },
+  topRight: { x: 0.82, y: 0.18 },
+  bottomRight: { x: 0.82, y: 0.72 },
+  bottomLeft: { x: 0.22, y: 0.72 },
+};
+if (isSafeAutomaticCrop(partialBrightRegion)) {
+  throw new Error('Eine Teilfläche darf niemals als vollständiges Blatt zugeschnitten werden.');
+}
+
+const deceptiveLargeRegion = {
+  topLeft: { x: 0.10, y: 0.05 },
+  topRight: { x: 0.90, y: 0.05 },
+  bottomRight: { x: 0.90, y: 0.95 },
+  bottomLeft: { x: 0.10, y: 0.95 },
+};
+if (isSafeAutomaticCrop(deceptiveLargeRegion)) {
+  throw new Error('Auch eine große innere Teilfläche darf nicht automatisch zugeschnitten werden.');
+}
+const crossedCorners = {
+  topLeft: { x: 0.03, y: 0.03 },
+  topRight: { x: 0.96, y: 0.96 },
+  bottomRight: { x: 0.96, y: 0.03 },
+  bottomLeft: { x: 0.03, y: 0.96 },
+};
+if (isSafeAutomaticCrop(crossedCorners)) throw new Error('Gekreuzte Ecken müssen verworfen werden.');
+if (isValidDocumentCorners(crossedCorners)) throw new Error('Gekreuzte manuelle Ecken müssen ungültig sein.');
+
+const whitePixels = new Uint8ClampedArray(40 * 40 * 4);
+whitePixels.fill(255);
+const fallbackMeta: DocumentCornerDetectionMeta = { source: 'line-detection' };
+findDocumentCorners(whitePixels, 40, 40, fallbackMeta);
+if (fallbackMeta.source !== 'bounds-fallback') {
+  throw new Error('Ein interner Vollbild-Fallback darf nie als echte Linienerkennung gelten.');
+}
 console.info('Dokument-Scaneditor: schräge Blattecken und Filter werden lokal vorbereitet.');

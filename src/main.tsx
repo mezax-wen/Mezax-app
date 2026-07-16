@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createWorker } from 'tesseract.js';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
@@ -19,6 +19,7 @@ import {
   LockKeyhole,
   Images,
   Plus,
+  RefreshCw,
   ScanSearch,
   ShieldCheck,
   Upload,
@@ -138,6 +139,11 @@ type ScanResult = {
 type PendingCameraCapture = {
   file: File;
   url: string;
+  slot?: RequiredDocument;
+  targetDocumentId?: number;
+};
+
+type CameraTarget = {
   slot?: RequiredDocument;
   targetDocumentId?: number;
 };
@@ -466,6 +472,12 @@ function App() {
   const [uploadNotice, setUploadNotice] = useState('');
   const [preview, setPreview] = useState<Doc | null>(null);
   const [pendingCameraCapture, setPendingCameraCapture] = useState<PendingCameraCapture | null>(null);
+  const [cameraTarget, setCameraTarget] = useState<CameraTarget | null>(null);
+  const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
+  const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
+  const [cameraError, setCameraError] = useState('');
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const [watermark, setWatermark] = useState(() => rentalWatermark(address));
   const [watermarkCustomized, setWatermarkCustomized] = useState(false);
   const [includeCover, setIncludeCover] = useState(true);
@@ -496,6 +508,54 @@ function App() {
     const timer = window.setTimeout(() => setShowSplash(false), 1500);
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    if (!cameraTarget) return;
+
+    let cancelled = false;
+    async function startCamera() {
+      stopCameraStream();
+      setCameraStatus('loading');
+      setCameraError('');
+
+      try {
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Die Mezax-Kamera benötigt eine sichere HTTPS-Verbindung.');
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: cameraFacing },
+            width: { ideal: 1920 },
+            height: { ideal: 2560 },
+          },
+          audio: false,
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        cameraStreamRef.current = stream;
+        const video = cameraVideoRef.current;
+        if (!video) throw new Error('Die Kameravorschau konnte nicht geöffnet werden.');
+        video.srcObject = stream;
+        await video.play();
+        setCameraStatus('ready');
+      } catch (error) {
+        if (cancelled) return;
+        stopCameraStream();
+        setCameraStatus('error');
+        setCameraError(error instanceof Error ? error.message : 'Die Kamera konnte nicht geöffnet werden.');
+      }
+    }
+
+    void startCamera();
+    return () => {
+      cancelled = true;
+      stopCameraStream();
+    };
+  }, [cameraTarget, cameraFacing]);
   useEffect(() => () => {
     if (applicantPhoto) URL.revokeObjectURL(applicantPhoto.url);
   }, [applicantPhoto]);
@@ -794,6 +854,95 @@ function App() {
     }
   }
 
+  function stopCameraStream() {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
+  }
+
+  function openDocumentCamera(slot?: RequiredDocument, targetDocumentId?: number) {
+    setCameraFacing('environment');
+    setCameraError('');
+    setCameraStatus('loading');
+    setCameraTarget({ slot, targetDocumentId });
+  }
+
+  function closeDocumentCamera() {
+    stopCameraStream();
+    setCameraTarget(null);
+    setCameraStatus('idle');
+    setCameraError('');
+  }
+
+  function switchDocumentCamera() {
+    if (cameraStatus === 'capturing') return;
+    setCameraFacing((current) => current === 'environment' ? 'user' : 'environment');
+  }
+
+  function stageSystemCameraCapture(fileList: FileList | null) {
+    const target = cameraTarget;
+    if (!target) return;
+    closeDocumentCamera();
+    stageCameraCapture(fileList, target.slot, target.targetDocumentId);
+  }
+
+  function captureDocumentPhoto() {
+    const target = cameraTarget;
+    const video = cameraVideoRef.current;
+    if (!target || !video || !video.videoWidth || !video.videoHeight) {
+      setCameraStatus('error');
+      setCameraError('Die Kamera ist noch nicht bereit. Bitte versuche es gleich noch einmal.');
+      return;
+    }
+
+    setCameraStatus('capturing');
+    const maxDimension = 2600;
+    const scale = Math.min(1, maxDimension / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) {
+      setCameraStatus('ready');
+      setCameraError('Das Foto konnte nicht aufgenommen werden.');
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setCameraStatus('ready');
+        setCameraError('Das Foto konnte nicht aufgenommen werden.');
+        return;
+      }
+
+      const file = new File(
+        [blob],
+        'mezax-dokument-' + Date.now() + '.jpg',
+        { type: 'image/jpeg', lastModified: Date.now() },
+      );
+      stopCameraStream();
+      setCameraTarget(null);
+      setCameraStatus('idle');
+      setPendingCameraCapture((current) => {
+        if (current) URL.revokeObjectURL(current.url);
+        return {
+          file,
+          url: URL.createObjectURL(file),
+          slot: target.slot,
+          targetDocumentId: target.targetDocumentId,
+        };
+      });
+    }, 'image/jpeg', 0.94);
+  }
+
+  function retakeDocumentPhoto() {
+    const capture = pendingCameraCapture;
+    if (!capture) return;
+    cancelCameraCapture();
+    openDocumentCamera(capture.slot, capture.targetDocumentId);
+  }
+
   function stageCameraCapture(fileList: FileList | null, slot?: RequiredDocument, targetDocumentId?: number) {
     const file = fileList?.[0];
     if (!file || !file.type.startsWith('image/')) return;
@@ -805,21 +954,6 @@ function App() {
         url: URL.createObjectURL(file),
         slot,
         targetDocumentId,
-      };
-    });
-  }
-
-  function replaceCameraCapture(fileList: FileList | null) {
-    const file = fileList?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
-
-    setPendingCameraCapture((current) => {
-      if (!current) return null;
-      URL.revokeObjectURL(current.url);
-      return {
-        ...current,
-        file,
-        url: URL.createObjectURL(file),
       };
     });
   }
@@ -1983,6 +2117,83 @@ function App() {
     );
   };
 
+  const DocumentCamera = () => {
+    if (!cameraTarget) return null;
+    const cameraReady = cameraStatus === 'ready';
+
+    return (
+      <div className="documentCameraOverlay" role="dialog" aria-modal="true" aria-label="Dokumentkamera">
+        <div className="cameraLiveTop">
+          <span>
+            <Camera />
+            <span><b>Dokument ausrichten</b><small>{cameraTarget.slot ?? 'Dokument'} fotografieren</small></span>
+          </span>
+          <em>Bleibt lokal</em>
+        </div>
+
+        <div className="cameraLiveViewport">
+          <video
+            ref={cameraVideoRef}
+            className={cameraFacing === 'user' ? 'mirrored' : ''}
+            autoPlay
+            muted
+            playsInline
+            aria-label="Live-Vorschau der Kamera"
+          />
+
+          {cameraStatus !== 'error' && (
+            <div className="documentGuide" aria-hidden="true">
+              <div className="documentGuideFrame">
+                <i className="topLeft" />
+                <i className="topRight" />
+                <i className="bottomLeft" />
+                <i className="bottomRight" />
+              </div>
+              <span>Alle vier Dokumentecken innerhalb des Rahmens ausrichten</span>
+            </div>
+          )}
+
+          {(cameraStatus === 'loading' || cameraStatus === 'capturing') && (
+            <div className="cameraLiveLoading">
+              <LoaderCircle className="spin" />
+              <b>{cameraStatus === 'capturing' ? 'Foto wird vorbereitet …' : 'Kamera wird geöffnet …'}</b>
+            </div>
+          )}
+
+          {cameraStatus === 'error' && (
+            <div className="cameraPermissionError">
+              <AlertTriangle />
+              <b>Mezax-Kamera nicht verfügbar</b>
+              <p>{cameraError}</p>
+              <label className="primary cameraFallback">
+                <Camera /> iPhone-Kamera öffnen
+                <input className="nativeFileInput" type="file" accept="image/*" capture="environment" onChange={(event) => {
+                  stageSystemCameraCapture(event.currentTarget.files);
+                  event.currentTarget.value = '';
+                }} />
+              </label>
+            </div>
+          )}
+        </div>
+
+        <div className="cameraLiveControls">
+          <p>Halte das iPhone möglichst parallel zum Dokument und vermeide Schatten.</p>
+          <div>
+            <button className="cameraRoundAction" type="button" onClick={closeDocumentCamera} aria-label="Kamera schließen">
+              <X />
+            </button>
+            <button className="cameraShutter" type="button" disabled={!cameraReady} onClick={captureDocumentPhoto} aria-label="Dokument fotografieren">
+              <span />
+            </button>
+            <button className="cameraRoundAction" type="button" disabled={cameraStatus === 'capturing'} onClick={switchDocumentCamera} aria-label="Kamera wechseln">
+              <RefreshCw />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const CameraCaptureReview = () => {
     if (!pendingCameraCapture) return null;
 
@@ -2011,14 +2222,10 @@ function App() {
             </span>
           </div>
           <div className="cameraReviewActions">
-            <label className="secondary cameraRetake">
+            <button className="secondary cameraRetake" type="button" onClick={retakeDocumentPhoto}>
               <Camera />
               <span>Neu fotografieren</span>
-              <input className="nativeFileInput" type="file" accept="image/*" capture="environment" onChange={(event) => {
-                replaceCameraCapture(event.currentTarget.files);
-                event.currentTarget.value = '';
-              }} />
-            </label>
+            </button>
             <button className="primary" type="button" onClick={() => void confirmCameraCapture()}>
               <Check /> Foto verwenden
             </button>
@@ -2294,17 +2501,16 @@ function App() {
                   {assigned ? <Check className="recommendedDocState" /> : <Plus className="recommendedDocState pending" />}
                 </div>
                 <div className="categoryScanActions">
-                  <label className="categoryScanAction">
+                  <button
+                    className="categoryScanAction"
+                    type="button"
+                    onClick={() => openDocumentCamera(
+                      item,
+                      assigned && !allowsMultiple ? assigned.id : undefined,
+                    )}
+                  >
                     <Camera /><span>{assigned && !allowsMultiple ? 'Seite scannen' : 'Scannen'}</span>
-                    <input className="nativeFileInput" type="file" accept="image/*" capture="environment" onChange={(event) => {
-                      stageCameraCapture(
-                        event.currentTarget.files,
-                        item,
-                        assigned && !allowsMultiple ? assigned.id : undefined,
-                      );
-                      event.currentTarget.value = '';
-                    }} />
-                  </label>
+                  </button>
                   <label className="categoryScanAction fileAction">
                     <Images /><span>{assigned && !allowsMultiple ? 'Seiten hinzufügen' : 'Datei wählen'}</span>
                     <input className="nativeFileInput" multiple type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => {
@@ -2349,14 +2555,15 @@ function App() {
                       </button>
                       <button className="selectedFileRemove" onClick={() => removeDoc(doc.id)} aria-label={`${doc.name} entfernen`}><X /></button>
                       <div className="selectedFilePageActions">
-                        <label className={combiningDocumentId === doc.id ? 'pageAction disabled' : 'pageAction'}>
+                        <button
+                          className={combiningDocumentId === doc.id ? 'pageAction disabled' : 'pageAction'}
+                          type="button"
+                          disabled={combiningDocumentId === doc.id}
+                          onClick={() => openDocumentCamera(doc.slot, doc.id)}
+                        >
                           {combiningDocumentId === doc.id ? <LoaderCircle className="spin" /> : <Camera />}
                           <span>{combiningDocumentId === doc.id ? 'Wird verbunden …' : 'Seite fotografieren'}</span>
-                          <input className="nativeFileInput" disabled={combiningDocumentId === doc.id} type="file" accept="image/*" capture="environment" onChange={(event) => {
-                            stageCameraCapture(event.currentTarget.files, doc.slot, doc.id);
-                            event.currentTarget.value = '';
-                          }} />
-                        </label>
+                        </button>
                         <label className={combiningDocumentId === doc.id ? 'pageAction disabled' : 'pageAction'}>
                           <Images />
                           <span>Seiten hinzufügen</span>
@@ -2375,6 +2582,7 @@ function App() {
         </section>
         <footer><button className="primary" disabled={!docs.length} onClick={() => setScreen('check')}>Zur Prüfung <ChevronRight /></button></footer>
         <Preview />
+        <DocumentCamera />
         <CameraCaptureReview />
       </main>
     );

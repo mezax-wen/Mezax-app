@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Camera, Check, LoaderCircle, ScanSearch, SlidersHorizontal, X } from 'lucide-react';
+import { AlertTriangle, Camera, Check, LoaderCircle, Plus, ScanSearch, SlidersHorizontal, X } from 'lucide-react';
 import {
   analyzeDocumentCorners,
   createScannedDocumentFile,
@@ -7,6 +7,7 @@ import {
   type DocumentCorners,
   type ScanFilter,
 } from './documentPerspective';
+import { analyzeDocumentScanQuality, type ScanQualityResult } from './scanQuality';
 
 type CornerKey = keyof DocumentCorners;
 
@@ -14,9 +15,11 @@ type DocumentScanEditorProps = {
   sourceUrl: string;
   sourceName: string;
   label: string;
+  pageCount?: number;
   onCancel: () => void;
   onRetake: () => void;
   onUse: (file: File) => Promise<void> | void;
+  onUseAndContinue?: (file: File) => Promise<void> | void;
 };
 
 const defaultCorners: DocumentCorners = {
@@ -37,13 +40,17 @@ export default function DocumentScanEditor({
   sourceUrl,
   sourceName,
   label,
+  pageCount = 1,
   onCancel,
   onRetake,
   onUse,
+  onUseAndContinue,
 }: DocumentScanEditorProps) {
   const [corners, setCorners] = useState<DocumentCorners>(defaultCorners);
   const [filter, setFilter] = useState<ScanFilter>('color');
   const [analysisStatus, setAnalysisStatus] = useState<'loading' | 'done' | 'error'>('loading');
+  const [qualityStatus, setQualityStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [quality, setQuality] = useState<ScanQualityResult | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const imageFrameRef = useRef<HTMLDivElement | null>(null);
@@ -51,6 +58,8 @@ export default function DocumentScanEditor({
   useEffect(() => {
     let active = true;
     setAnalysisStatus('loading');
+    setQuality(null);
+    setQualityStatus('idle');
     setError('');
     analyzeDocumentCorners(sourceUrl)
       .then((result) => {
@@ -68,6 +77,30 @@ export default function DocumentScanEditor({
       active = false;
     };
   }, [sourceUrl]);
+
+  useEffect(() => {
+    if (analysisStatus === 'loading') return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setQualityStatus('loading');
+      analyzeDocumentScanQuality(sourceUrl, corners)
+        .then((result) => {
+          if (!active) return;
+          setQuality(result);
+          setQualityStatus('done');
+        })
+        .catch(() => {
+          if (!active) return;
+          setQuality(null);
+          setQualityStatus('error');
+        });
+    }, 350);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [analysisStatus, corners, sourceUrl]);
 
   const updateCorner = (key: CornerKey, event: ReactPointerEvent<HTMLButtonElement>) => {
     const rect = imageFrameRef.current?.getBoundingClientRect();
@@ -91,13 +124,14 @@ export default function DocumentScanEditor({
     updateCorner(key, event);
   };
 
-  const useScan = async () => {
+  const useScan = async (continueScanning = false) => {
     if (processing) return;
     setProcessing(true);
     setError('');
     try {
       const file = await createScannedDocumentFile(sourceUrl, corners, filter, sourceName);
-      await onUse(file);
+      if (continueScanning && onUseAndContinue) await onUseAndContinue(file);
+      else await onUse(file);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Der Scan konnte nicht erstellt werden.');
       setProcessing(false);
@@ -110,6 +144,10 @@ export default function DocumentScanEditor({
     corners.bottomRight,
     corners.bottomLeft,
   ].map((point) => `${point.x * 1000},${point.y * 1000}`).join(' ');
+  const qualityClass = quality?.level ?? (qualityStatus === 'error' ? 'check' : 'loading');
+  const qualityHint = quality?.metrics.find((metric) => metric.status === 'poor')
+    ?? quality?.metrics.find((metric) => metric.status === 'check')
+    ?? quality?.metrics[0];
 
   return (
     <div className="scanEditorOverlay" role="dialog" aria-modal="true" aria-label="Dokumentscan bearbeiten">
@@ -119,7 +157,7 @@ export default function DocumentScanEditor({
         </button>
         <div>
           <b>Scan bearbeiten</b>
-          <small>{label} · bleibt lokal</small>
+          <small>{label} · Seite {pageCount} · bleibt lokal</small>
         </div>
       </div>
 
@@ -165,6 +203,32 @@ export default function DocumentScanEditor({
           </span>
         </div>
 
+        <div className={`scanQualityCard ${qualityClass}`}>
+          {qualityStatus === 'loading' || qualityStatus === 'idle'
+            ? <LoaderCircle className="spin" />
+            : quality?.level === 'good'
+              ? <Check />
+              : <AlertTriangle />}
+          <span>
+            <b>{qualityStatus === 'loading' || qualityStatus === 'idle'
+              ? 'Scanqualität wird geprüft …'
+              : quality?.title ?? 'Qualität bitte selbst prüfen'}</b>
+            <small>{quality
+              ? `${qualityHint?.message ?? 'Bitte Vorschau prüfen'} · ${quality.score}/100`
+              : 'Die Prüfung läuft vollständig auf deinem Gerät.'}</small>
+          </span>
+          {quality && (
+            <div className="scanQualityMetrics">
+              {quality.metrics.map((metric) => (
+                <em className={metric.status} key={metric.id}>
+                  {metric.status === 'good' ? <Check /> : <AlertTriangle />}
+                  {metric.label}
+                </em>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="scanFilterSection">
           <span><SlidersHorizontal /> Darstellung</span>
           <div className="scanFilterOptions" role="group" aria-label="Scanfilter wählen">
@@ -187,9 +251,14 @@ export default function DocumentScanEditor({
           <button className="secondary" type="button" onClick={onRetake} disabled={processing}>
             <Camera /> Neu
           </button>
-          <button className="primary" type="button" onClick={() => void useScan()} disabled={processing || analysisStatus === 'loading'}>
+          {onUseAndContinue && (
+            <button className="secondary scanNextAction" type="button" onClick={() => void useScan(true)} disabled={processing || analysisStatus === 'loading'}>
+              <Plus /> Weitere Seite
+            </button>
+          )}
+          <button className="primary scanUseAction" type="button" onClick={() => void useScan()} disabled={processing || analysisStatus === 'loading'}>
             {processing ? <LoaderCircle className="spin" /> : <Check />}
-            {processing ? 'Wird optimiert …' : 'Scan verwenden'}
+            {processing ? 'Wird optimiert …' : quality?.level === 'retry' ? 'Trotzdem verwenden' : 'Scan verwenden'}
           </button>
         </div>
       </div>

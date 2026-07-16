@@ -2582,7 +2582,7 @@ function App() {
         </section>
         <footer><button className="primary" disabled={!docs.length} onClick={() => setScreen('check')}>Zur Prüfung <ChevronRight /></button></footer>
         <Preview />
-        <DocumentCamera />
+        {DocumentCamera()}
         <CameraCaptureReview />
       </main>
     );

@@ -201,3 +201,38 @@ header{background:#fff}
 .cameraReviewOverlay{z-index:210;height:100vh;height:100dvh}
 .cameraRetake[type="button"]{font:inherit}
 @media(max-width:350px){.cameraLiveControls>div{grid-template-columns:50px 1fr 50px;gap:10px}.cameraRoundAction{width:48px;height:48px}.cameraShutter{width:70px;height:70px}.documentGuideFrame{height:min(72%,520px)}}
+
+/* Local document scan editor */
+.scanEditorOverlay{position:fixed;z-index:220;inset:0;margin:auto;width:min(100%,430px);height:100vh;height:100dvh;background:#020b11;color:#f4fbfd;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;overscroll-behavior:none}
+.scanEditorTop{min-height:68px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:center;background:#071923;border-bottom:1px solid #18313c}
+.scanEditorTop .icon{width:44px;height:44px;margin:0;border:1px solid #29434e;background:#102832;color:#eff9fb}
+.scanEditorTop>div{display:grid;gap:2px;min-width:0}
+.scanEditorTop b{font-size:16px}
+.scanEditorTop small{color:#9fb4bd;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scanEditorStage{min-height:0;padding:12px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(circle at 50% 45%,#10242d 0,#020b11 70%)}
+.scanEditorImageFrame{position:relative;display:inline-block;max-width:100%;max-height:100%;line-height:0;touch-action:none;filter:drop-shadow(0 10px 28px #000c)}
+.scanEditorImageFrame>img{display:block;width:auto;height:auto;max-width:100%;max-height:calc(100dvh - 340px);object-fit:contain;background:#fff;user-select:none;-webkit-user-drag:none}
+.scanCornerPolygon{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.scanCornerPolygon polygon{fill:#1fd9ae24;stroke:#43e4bd;stroke-width:7;vector-effect:non-scaling-stroke}
+.scanCornerHandle{position:absolute;z-index:3;width:28px;height:28px;margin:-14px 0 0 -14px;padding:0;border:4px solid #36dbae;border-radius:50%;background:#f7fffd;box-shadow:0 2px 12px #001b;touch-action:none}
+.scanEdgeLoading{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:#031016c7;color:#effbfa;font-size:11px;line-height:1.3}
+.scanEdgeLoading svg{width:28px;color:#31d8ac}
+.scanEditorPanel{padding:12px 14px calc(14px + env(safe-area-inset-bottom,0px));display:grid;gap:11px;background:#071923;border-top:1px solid #18313c}
+.scanEditorStatus{display:flex;align-items:flex-start;gap:9px}
+.scanEditorStatus>svg{width:20px;height:20px;flex:0 0 auto;color:#32dbac}
+.scanEditorStatus>span{display:grid;gap:2px}
+.scanEditorStatus b{font-size:12px}
+.scanEditorStatus small{font-size:10px;line-height:1.35;color:#9fb4bd}
+.scanFilterSection{display:grid;gap:7px}
+.scanFilterSection>span{display:flex;align-items:center;gap:6px;color:#cfe1e5;font-size:10px;font-weight:800}
+.scanFilterSection>span svg{width:15px}
+.scanFilterOptions{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.scanFilterOptions button{min-width:0;min-height:34px;padding:6px 4px;border:1px solid #29434e;border-radius:9px;background:#102832;color:#c7d9de;font:inherit;font-size:10px;font-weight:800}
+.scanFilterOptions button.active{border-color:#31d8ac;background:#123e38;color:#65f0ca;box-shadow:inset 0 0 0 1px #31d8ac55}
+.scanEditorError{margin:0;padding:7px 9px;border-radius:8px;background:#45252a;color:#ffd8da;font-size:10px;line-height:1.35}
+.scanEditorActions{display:grid;grid-template-columns:.72fr 1.28fr;gap:9px}
+.scanEditorActions .primary,.scanEditorActions .secondary{min-width:0;min-height:48px;margin:0;padding:9px;line-height:1.15}
+.scanEditorActions .secondary{border-color:#49616b;background:#102832;color:#f4fbfd}
+.scanEditorActions svg{width:18px;height:18px;flex:0 0 auto}
+@media(max-height:700px){.scanEditorImageFrame>img{max-height:calc(100dvh - 305px)}.scanEditorStatus{display:none}.scanEditorPanel{gap:8px;padding-top:9px}.scanEditorTop{min-height:58px}}
+@media(max-width:350px){.scanEditorActions{grid-template-columns:1fr 1.4fr}.scanFilterOptions{gap:4px}.scanFilterOptions button{font-size:9px}}

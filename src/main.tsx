@@ -42,6 +42,7 @@ import { allDocumentsReadyForExport } from './application/exportReadiness';
 import { loadApplicantProfile, saveApplicantProfile, type ApplicantProfile } from './application/applicantProfile';
 import { optimizeDocumentImage, type SmartScanEnhancement } from './scan/imageOptimizer';
 import { createMultiPageDocument, shouldBundleSelection } from './scan/multiPageDocument';
+import DocumentScanEditor from './scan/DocumentScanEditor';
 import {
   listApplicationDrafts,
   loadApplicationDraft,
@@ -987,16 +988,17 @@ function App() {
     });
   }
 
-  async function confirmCameraCapture() {
+  async function confirmCameraCapture(processedFile?: File) {
     const capture = pendingCameraCapture;
     if (!capture) return;
     setPendingCameraCapture(null);
 
     try {
+      const selectedFile = processedFile ?? capture.file;
       if (capture.targetDocumentId !== undefined) {
-        await appendPagesToDocument(capture.targetDocumentId, [capture.file]);
+        await appendPagesToDocument(capture.targetDocumentId, [selectedFile]);
       } else {
-        await addFiles([capture.file], capture.slot);
+        await addFiles([selectedFile], capture.slot);
       }
     } finally {
       URL.revokeObjectURL(capture.url);
@@ -2218,42 +2220,15 @@ function App() {
 
   const CameraCaptureReview = () => {
     if (!pendingCameraCapture) return null;
-
     return (
-      <div className="cameraReviewOverlay" role="dialog" aria-modal="true" aria-label="Dokumentfoto prüfen">
-        <div className="cameraReviewTop">
-          <button className="icon" type="button" onClick={cancelCameraCapture} aria-label="Foto verwerfen">
-            <X />
-          </button>
-          <div>
-            <b>Foto prüfen</b>
-            <small>{pendingCameraCapture.slot ?? 'Dokument'} · noch nicht gespeichert</small>
-          </div>
-        </div>
-
-        <div className="cameraReviewImage">
-          <img src={pendingCameraCapture.url} alt="Vorschau des aufgenommenen Dokuments" />
-        </div>
-
-        <div className="cameraReviewPanel">
-          <div className="cameraReviewHint">
-            <ScanSearch />
-            <span>
-              <b>Ist das Dokument vollständig und scharf?</b>
-              <small>Prüfe Ecken, Text und Licht. Smart Scan startet erst nach deiner Bestätigung.</small>
-            </span>
-          </div>
-          <div className="cameraReviewActions">
-            <button className="secondary cameraRetake" type="button" onClick={retakeDocumentPhoto}>
-              <Camera />
-              <span>Neu fotografieren</span>
-            </button>
-            <button className="primary" type="button" onClick={() => void confirmCameraCapture()}>
-              <Check /> Foto verwenden
-            </button>
-          </div>
-        </div>
-      </div>
+      <DocumentScanEditor
+        sourceUrl={pendingCameraCapture.url}
+        sourceName={pendingCameraCapture.file.name}
+        label={pendingCameraCapture.slot ?? 'Dokument'}
+        onCancel={cancelCameraCapture}
+        onRetake={retakeDocumentPhoto}
+        onUse={(file) => confirmCameraCapture(file)}
+      />
     );
   };
 

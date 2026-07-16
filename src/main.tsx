@@ -135,6 +135,13 @@ type ScanResult = {
   error?: string;
 };
 
+type PendingCameraCapture = {
+  file: File;
+  url: string;
+  slot?: RequiredDocument;
+  targetDocumentId?: number;
+};
+
 const required = requiredDocumentOrder;
 
 const emptyScan: ScanResult = {
@@ -458,6 +465,7 @@ function App() {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [uploadNotice, setUploadNotice] = useState('');
   const [preview, setPreview] = useState<Doc | null>(null);
+  const [pendingCameraCapture, setPendingCameraCapture] = useState<PendingCameraCapture | null>(null);
   const [watermark, setWatermark] = useState(() => rentalWatermark(address));
   const [watermarkCustomized, setWatermarkCustomized] = useState(false);
   const [includeCover, setIncludeCover] = useState(true);
@@ -786,9 +794,62 @@ function App() {
     }
   }
 
-  async function addFiles(fileList: FileList | null, slot?: RequiredDocument) {
+  function stageCameraCapture(fileList: FileList | null, slot?: RequiredDocument, targetDocumentId?: number) {
+    const file = fileList?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+
+    setPendingCameraCapture((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return {
+        file,
+        url: URL.createObjectURL(file),
+        slot,
+        targetDocumentId,
+      };
+    });
+  }
+
+  function replaceCameraCapture(fileList: FileList | null) {
+    const file = fileList?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+
+    setPendingCameraCapture((current) => {
+      if (!current) return null;
+      URL.revokeObjectURL(current.url);
+      return {
+        ...current,
+        file,
+        url: URL.createObjectURL(file),
+      };
+    });
+  }
+
+  function cancelCameraCapture() {
+    setPendingCameraCapture((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }
+
+  async function confirmCameraCapture() {
+    const capture = pendingCameraCapture;
+    if (!capture) return;
+    setPendingCameraCapture(null);
+
+    try {
+      if (capture.targetDocumentId !== undefined) {
+        await appendPagesToDocument(capture.targetDocumentId, [capture.file]);
+      } else {
+        await addFiles([capture.file], capture.slot);
+      }
+    } finally {
+      URL.revokeObjectURL(capture.url);
+    }
+  }
+
+  async function addFiles(fileList: ArrayLike<File> | null, slot?: RequiredDocument) {
     if (!fileList) return;
-    let selectedFiles = Array.from(fileList);
+    let selectedFiles = Array.from(fileList) as File[];
     if (!selectedFiles.length) return;
     const current = docs;
     if (slot && !canAssignFolderDocumentSlot(current, -1, slot)) {
@@ -862,8 +923,8 @@ function App() {
     if (announce) setUploadNotice('Smart Scan abgeschlossen. Bitte kontrolliere die Ergebnisse.');
   }
 
-  async function appendPagesToDocument(docId: number, fileList: FileList | null) {
-    const extraPages = fileList ? Array.from(fileList) : [];
+  async function appendPagesToDocument(docId: number, fileList: ArrayLike<File> | null) {
+    const extraPages = fileList ? Array.from(fileList) as File[] : [];
     const target = docs.find((doc) => doc.id === docId);
     if (!target || !extraPages.length) return;
     setCombiningDocumentId(docId);
@@ -1922,6 +1983,51 @@ function App() {
     );
   };
 
+  const CameraCaptureReview = () => {
+    if (!pendingCameraCapture) return null;
+
+    return (
+      <div className="cameraReviewOverlay" role="dialog" aria-modal="true" aria-label="Dokumentfoto prüfen">
+        <div className="cameraReviewTop">
+          <button className="icon" type="button" onClick={cancelCameraCapture} aria-label="Foto verwerfen">
+            <X />
+          </button>
+          <div>
+            <b>Foto prüfen</b>
+            <small>{pendingCameraCapture.slot ?? 'Dokument'} · noch nicht gespeichert</small>
+          </div>
+        </div>
+
+        <div className="cameraReviewImage">
+          <img src={pendingCameraCapture.url} alt="Vorschau des aufgenommenen Dokuments" />
+        </div>
+
+        <div className="cameraReviewPanel">
+          <div className="cameraReviewHint">
+            <ScanSearch />
+            <span>
+              <b>Ist das Dokument vollständig und scharf?</b>
+              <small>Prüfe Ecken, Text und Licht. Smart Scan startet erst nach deiner Bestätigung.</small>
+            </span>
+          </div>
+          <div className="cameraReviewActions">
+            <label className="secondary cameraRetake">
+              <Camera />
+              <span>Neu fotografieren</span>
+              <input className="nativeFileInput" type="file" accept="image/*" capture="environment" onChange={(event) => {
+                replaceCameraCapture(event.currentTarget.files);
+                event.currentTarget.value = '';
+              }} />
+            </label>
+            <button className="primary" type="button" onClick={() => void confirmCameraCapture()}>
+              <Check /> Foto verwenden
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (screen === 'welcome') {
     return (
       <main className="app welcome">
@@ -2191,7 +2297,11 @@ function App() {
                   <label className="categoryScanAction">
                     <Camera /><span>{assigned && !allowsMultiple ? 'Seite scannen' : 'Scannen'}</span>
                     <input className="nativeFileInput" type="file" accept="image/*" capture="environment" onChange={(event) => {
-                      void addCategoryFiles(event.currentTarget.files);
+                      stageCameraCapture(
+                        event.currentTarget.files,
+                        item,
+                        assigned && !allowsMultiple ? assigned.id : undefined,
+                      );
                       event.currentTarget.value = '';
                     }} />
                   </label>
@@ -2243,7 +2353,7 @@ function App() {
                           {combiningDocumentId === doc.id ? <LoaderCircle className="spin" /> : <Camera />}
                           <span>{combiningDocumentId === doc.id ? 'Wird verbunden …' : 'Seite fotografieren'}</span>
                           <input className="nativeFileInput" disabled={combiningDocumentId === doc.id} type="file" accept="image/*" capture="environment" onChange={(event) => {
-                            void appendPagesToDocument(doc.id, event.currentTarget.files);
+                            stageCameraCapture(event.currentTarget.files, doc.slot, doc.id);
                             event.currentTarget.value = '';
                           }} />
                         </label>
@@ -2265,6 +2375,7 @@ function App() {
         </section>
         <footer><button className="primary" disabled={!docs.length} onClick={() => setScreen('check')}>Zur Prüfung <ChevronRight /></button></footer>
         <Preview />
+        <CameraCaptureReview />
       </main>
     );
   }

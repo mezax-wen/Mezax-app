@@ -137,3 +137,24 @@ header{background:#fff}
 .categoryScanAction span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .categoryScanAction:focus-within{outline:3px solid #16aa7933;border-color:#16aa79}
 @media(max-width:350px){.categoryScanActions{grid-template-columns:1fr}.categoryScanAction{min-height:40px}}
+/* Camera confirmation before Smart Scan */
+.cameraReviewOverlay{position:fixed;z-index:200;top:0;bottom:0;left:50%;width:min(100%,430px);height:100dvh;transform:translateX(-50%);background:#020b11;color:#f4fbfd;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden}
+.cameraReviewTop{min-height:68px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px;align-items:center;background:#071923;border-bottom:1px solid #18313c}
+.cameraReviewTop .icon{width:44px;height:44px;margin:0;border:1px solid #29434e;background:#102832;color:#eff9fb}
+.cameraReviewTop>div{display:grid;gap:2px;min-width:0}
+.cameraReviewTop b{font-size:16px}
+.cameraReviewTop small{color:#9fb4bd;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cameraReviewImage{min-height:0;padding:12px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(circle at 50% 45%,#10242d 0,#020b11 70%)}
+.cameraReviewImage img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;border-radius:9px;background:#fff;box-shadow:0 10px 36px #000b}
+.cameraReviewPanel{padding:14px 14px calc(16px + env(safe-area-inset-bottom,0px));display:grid;gap:14px;background:#071923;border-top:1px solid #18313c}
+.cameraReviewHint{display:flex;align-items:flex-start;gap:10px}
+.cameraReviewHint>svg{width:20px;height:20px;flex:0 0 auto;color:#32dbac}
+.cameraReviewHint>span{display:grid;gap:3px;min-width:0}
+.cameraReviewHint b{font-size:12px}
+.cameraReviewHint small{color:#9fb4bd;font-size:10px;line-height:1.4}
+.cameraReviewActions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cameraReviewActions .primary,.cameraReviewActions .secondary{min-width:0;min-height:52px;margin:0;padding:10px;line-height:1.2}
+.cameraReviewActions .secondary{border-color:#49616b;background:#102832;color:#f4fbfd}
+.cameraRetake{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;text-align:center}
+.cameraReviewActions svg{width:19px;height:19px;flex:0 0 auto}
+@media(max-width:350px){.cameraReviewActions{grid-template-columns:1fr}.cameraReviewHint{display:none}}

@@ -226,7 +226,12 @@ export function previewFilter(filter: ScanFilter) {
   return 'none';
 }
 
-export async function renderDocumentScan(url: string, corners: DocumentCorners, filter: ScanFilter) {
+export async function renderDocumentScan(
+  url: string,
+  corners: DocumentCorners,
+  filter: ScanFilter,
+  maxDimension = 2200,
+) {
   const image = await loadImage(url);
   const source = {
     topLeft: { x: corners.topLeft.x * image.naturalWidth, y: corners.topLeft.y * image.naturalHeight },
@@ -236,7 +241,7 @@ export async function renderDocumentScan(url: string, corners: DocumentCorners, 
   };
   const rawWidth = Math.max(distance(source.topLeft, source.topRight), distance(source.bottomLeft, source.bottomRight));
   const rawHeight = Math.max(distance(source.topLeft, source.bottomLeft), distance(source.topRight, source.bottomRight));
-  const scale = Math.min(1, 2200 / Math.max(rawWidth, rawHeight));
+  const scale = Math.min(1, maxDimension / Math.max(rawWidth, rawHeight));
   const width = Math.max(1, Math.round(rawWidth * scale));
   const height = Math.max(1, Math.round(rawHeight * scale));
   const destination = {

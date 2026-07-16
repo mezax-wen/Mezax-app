@@ -150,6 +150,10 @@ type CameraTarget = {
   targetDocumentId?: number;
 };
 
+type CameraScanSession = CameraTarget & {
+  pages: File[];
+};
+
 const required = requiredDocumentOrder;
 
 const emptyScan: ScanResult = {
@@ -475,6 +479,7 @@ function App() {
   const [preview, setPreview] = useState<Doc | null>(null);
   const [pendingCameraCapture, setPendingCameraCapture] = useState<PendingCameraCapture | null>(null);
   const [cameraTarget, setCameraTarget] = useState<CameraTarget | null>(null);
+  const [cameraScanSession, setCameraScanSession] = useState<CameraScanSession | null>(null);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
   const [cameraError, setCameraError] = useState('');
@@ -720,6 +725,8 @@ function App() {
     setDocs([]);
     setUploadNotice('');
     setPreview(null);
+    setPendingCameraCapture(null);
+    setCameraScanSession(null);
     setScans({});
     setRedactionsApplied({});
     setPreparedFolder(null);
@@ -863,18 +870,23 @@ function App() {
     if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
   }
 
-  function openDocumentCamera(slot?: RequiredDocument, targetDocumentId?: number) {
+  function openDocumentCamera(slot?: RequiredDocument, targetDocumentId?: number, keepSession = false) {
+    if (!keepSession) setCameraScanSession({ slot, targetDocumentId, pages: [] });
     setCameraFacing('environment');
     setCameraError('');
     setCameraStatus('loading');
     setCameraTarget({ slot, targetDocumentId });
   }
 
-  function closeDocumentCamera() {
+  function closeDocumentCamera(preserveSession = false) {
+    if (!preserveSession && cameraScanSession?.pages.length
+      && !window.confirm(`${cameraScanSession.pages.length} bereits erfasste Seite(n) verwerfen?`)) return false;
     stopCameraStream();
     setCameraTarget(null);
     setCameraStatus('idle');
     setCameraError('');
+    if (!preserveSession) setCameraScanSession(null);
+    return true;
   }
 
   function switchDocumentCamera() {
@@ -885,7 +897,7 @@ function App() {
   function stageSystemCameraCapture(fileList: FileList | null) {
     const target = cameraTarget;
     if (!target) return;
-    closeDocumentCamera();
+    closeDocumentCamera(true);
     stageCameraCapture(fileList, target.slot, target.targetDocumentId);
   }
 
@@ -962,8 +974,8 @@ function App() {
   function retakeDocumentPhoto() {
     const capture = pendingCameraCapture;
     if (!capture) return;
-    cancelCameraCapture();
-    openDocumentCamera(capture.slot, capture.targetDocumentId);
+    cancelCameraCapture(true);
+    openDocumentCamera(capture.slot, capture.targetDocumentId, true);
   }
 
   function stageCameraCapture(fileList: FileList | null, slot?: RequiredDocument, targetDocumentId?: number) {
@@ -981,38 +993,64 @@ function App() {
     });
   }
 
-  function cancelCameraCapture() {
+  function cancelCameraCapture(preserveSession = false) {
+    if (!preserveSession && cameraScanSession?.pages.length
+      && !window.confirm(`${cameraScanSession.pages.length} bereits erfasste Seite(n) verwerfen?`)) return;
     setPendingCameraCapture((current) => {
       if (current) URL.revokeObjectURL(current.url);
       return null;
     });
+    if (!preserveSession) setCameraScanSession(null);
+  }
+
+  async function continueCameraCapture(processedFile?: File) {
+    const capture = pendingCameraCapture;
+    if (!capture) return;
+    const selectedFile = processedFile ?? capture.file;
+    setCameraScanSession((current) => {
+      const matches = current?.slot === capture.slot
+        && current?.targetDocumentId === capture.targetDocumentId;
+      return {
+        slot: capture.slot,
+        targetDocumentId: capture.targetDocumentId,
+        pages: [...(matches ? current.pages : []), selectedFile],
+      };
+    });
+    setPendingCameraCapture(null);
+    URL.revokeObjectURL(capture.url);
+    openDocumentCamera(capture.slot, capture.targetDocumentId, true);
   }
 
   async function confirmCameraCapture(processedFile?: File) {
     const capture = pendingCameraCapture;
     if (!capture) return;
-    setPendingCameraCapture(null);
+    const selectedFile = processedFile ?? capture.file;
+    const sessionMatches = cameraScanSession?.slot === capture.slot
+      && cameraScanSession?.targetDocumentId === capture.targetDocumentId;
+    const pages = [...(sessionMatches ? cameraScanSession.pages : []), selectedFile];
 
-    try {
-      const selectedFile = processedFile ?? capture.file;
-      if (capture.targetDocumentId !== undefined) {
-        await appendPagesToDocument(capture.targetDocumentId, [selectedFile]);
-      } else {
-        await addFiles([selectedFile], capture.slot);
-      }
-    } finally {
-      URL.revokeObjectURL(capture.url);
+    if (capture.targetDocumentId !== undefined) {
+      await appendPagesToDocument(capture.targetDocumentId, pages);
+    } else {
+      const fileToAdd = pages.length > 1
+        ? await createMultiPageDocument(pages, capture.slot)
+        : selectedFile;
+      const addedDocuments = await addFiles([fileToAdd], capture.slot);
+      if (!addedDocuments.length) throw new Error('Die gescannten Seiten konnten nicht gespeichert werden.');
     }
-  }
 
-  async function addFiles(fileList: ArrayLike<File> | null, slot?: RequiredDocument) {
-    if (!fileList) return;
+    setPendingCameraCapture(null);
+    setCameraScanSession(null);
+    URL.revokeObjectURL(capture.url);
+  }
+  async function addFiles(fileList: ArrayLike<File> | null, slot?: RequiredDocument): Promise<Doc[]> {
+    if (!fileList) return [];
     let selectedFiles = Array.from(fileList) as File[];
-    if (!selectedFiles.length) return;
+    if (!selectedFiles.length) return [];
     const current = docs;
     if (slot && !canAssignFolderDocumentSlot(current, -1, slot)) {
       setUploadNotice(`${slot} ist bereits vorhanden. Nutze bei der vorhandenen Datei „Seite hinzufügen“, wenn sie mehrseitig ist.`);
-      return;
+      return [];
     }
 
     if (shouldBundleSelection(slot, selectedFiles)) {
@@ -1021,7 +1059,7 @@ function App() {
         selectedFiles = [await createMultiPageDocument(selectedFiles, slot)];
       } catch (error) {
         setUploadNotice(error instanceof Error ? error.message : 'Die Seiten konnten nicht zusammengeführt werden.');
-        return;
+        return [];
       }
     }
 
@@ -1048,7 +1086,7 @@ function App() {
     const skippedForCategory = acceptedFiles.length - allowedFiles.length;
     if (!allowedFiles.length) {
       setUploadNotice('Diese Datei ist bereits in der Mappe und wurde nicht erneut hinzugefügt.');
-      return;
+      return [];
     }
 
     if (skippedDuplicates || skippedForCategory) {
@@ -1072,6 +1110,7 @@ function App() {
     }));
     setDocs(sortFolderDocuments([...current, ...addedDocuments]));
     void scanDocumentsSequentially(addedDocuments, true);
+    return addedDocuments;
   }
 
   async function scanDocumentsSequentially(documents: Doc[], announce = false) {
@@ -2150,7 +2189,7 @@ function App() {
         <div className="cameraLiveTop">
           <span>
             <Camera />
-            <span><b>Dokument ausrichten</b><small>{cameraTarget.slot ?? 'Dokument'} fotografieren</small></span>
+            <span><b>Dokument ausrichten</b><small>{cameraTarget.slot ?? 'Dokument'} fotografieren{cameraScanSession?.pages.length ? ' · ' + cameraScanSession.pages.length + ' Seite(n) erfasst' : ''}</small></span>
           </span>
           <em>Bleibt lokal</em>
         </div>
@@ -2203,7 +2242,7 @@ function App() {
         <div className="cameraLiveControls">
           <p>Halte das iPhone möglichst parallel zum Dokument und vermeide Schatten.</p>
           <div>
-            <button className="cameraRoundAction" type="button" onClick={closeDocumentCamera} aria-label="Kamera schließen">
+            <button className="cameraRoundAction" type="button" onClick={() => closeDocumentCamera()} aria-label="Kamera schließen">
               <X />
             </button>
             <button className="cameraShutter" type="button" disabled={!cameraReady} onClick={captureDocumentPhoto} aria-label="Dokument fotografieren">
@@ -2225,9 +2264,11 @@ function App() {
         sourceUrl={pendingCameraCapture.url}
         sourceName={pendingCameraCapture.file.name}
         label={pendingCameraCapture.slot ?? 'Dokument'}
-        onCancel={cancelCameraCapture}
+        onCancel={() => cancelCameraCapture()}
         onRetake={retakeDocumentPhoto}
+        pageCount={(cameraScanSession?.pages.length ?? 0) + 1}
         onUse={(file) => confirmCameraCapture(file)}
+        onUseAndContinue={(file) => continueCameraCapture(file)}
       />
     );
   };

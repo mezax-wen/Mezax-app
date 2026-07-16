@@ -57,6 +57,7 @@ const publicAsset = (fileName: string) => import.meta.env.BASE_URL + fileName;
 type Screen = 'welcome' | 'dashboard' | 'folders' | 'profile' | 'new' | 'documents' | 'check' | 'result' | 'export';
 type ScanStatus = 'idle' | 'loading' | 'done' | 'error';
 
+
 type Doc = {
   id: number;
   name: string;
@@ -1030,7 +1031,10 @@ function App() {
     const pages = [...(sessionMatches ? cameraScanSession.pages : []), selectedFile];
 
     if (capture.targetDocumentId !== undefined) {
-      await appendPagesToDocument(capture.targetDocumentId, pages);
+      const appended = await appendPagesToDocument(capture.targetDocumentId, pages);
+      if (!appended) {
+        throw new Error('Die gescannten Seiten konnten nicht hinzugefügt werden. Sie bleiben zum erneuten Versuch geöffnet.');
+      }
     } else {
       const fileToAdd = pages.length > 1
         ? await createMultiPageDocument(pages, capture.slot)
@@ -1120,10 +1124,10 @@ function App() {
     if (announce) setUploadNotice('Smart Scan abgeschlossen. Bitte kontrolliere die Ergebnisse.');
   }
 
-  async function appendPagesToDocument(docId: number, fileList: ArrayLike<File> | null) {
+  async function appendPagesToDocument(docId: number, fileList: ArrayLike<File> | null): Promise<boolean> {
     const extraPages = fileList ? Array.from(fileList) as File[] : [];
     const target = docs.find((doc) => doc.id === docId);
-    if (!target || !extraPages.length) return;
+    if (!target || !extraPages.length) return false;
     setCombiningDocumentId(docId);
     setUploadNotice(`${extraPages.length} weitere Seite(n) werden lokal hinzugefügt …`);
     try {
@@ -1155,8 +1159,10 @@ function App() {
       });
       setUploadNotice(`${extraPages.length} Seite(n) hinzugefügt. Smart Scan prüft das Dokument erneut …`);
       void scanDocument(updated, true);
+      return true;
     } catch (error) {
       setUploadNotice(error instanceof Error ? error.message : 'Die weiteren Seiten konnten nicht hinzugefügt werden.');
+      return false;
     } finally {
       setCombiningDocumentId(null);
     }
@@ -1235,10 +1241,10 @@ function App() {
             ...(current[doc.id] ?? emptyScan),
             status: 'loading',
             progress: 0.12,
-            message: 'Bild wird lokal zugeschnitten und optimiert …',
+            message: 'Bild wird lokal ohne Zuschnitt für OCR optimiert …',
           },
         }));
-        const optimized = await optimizeDocumentImage(doc.url);
+        const optimized = await optimizeDocumentImage(doc.url, { crop: false });
         sourceUrl = optimized.dataUrl;
         dimensions = { width: optimized.width, height: optimized.height };
         enhancement = optimized;

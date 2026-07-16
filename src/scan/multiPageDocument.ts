@@ -21,15 +21,34 @@ export function smartScanFileName(slot: RequiredDocument | undefined, fallback =
   return `${normalized || 'Dokument'}-mehrseitig.pdf`;
 }
 
+function loadImage(url: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Eine Bildseite konnte nicht lokal vorbereitet werden.'));
+    image.src = url;
+  });
+}
+
 async function renderImageFile(file: File): Promise<RenderedPage> {
-  const { optimizeDocumentImage } = await import('./imageOptimizer.ts');
   const url = URL.createObjectURL(file);
   try {
-    const optimized = await optimizeDocumentImage(url);
+    const image = await loadImage(url);
+    const scale = Math.min(1, 2400 / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) throw new Error('Eine Bildseite konnte nicht lokal vorbereitet werden.');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
     return {
-      dataUrl: optimized.dataUrl,
-      width: optimized.width,
-      height: optimized.height,
+      dataUrl: canvas.toDataURL('image/jpeg', 0.94),
+      width,
+      height,
     };
   } finally {
     URL.revokeObjectURL(url);

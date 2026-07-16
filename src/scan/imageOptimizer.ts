@@ -102,7 +102,7 @@ function loadImage(url: string) {
   });
 }
 
-export async function optimizeDocumentImage(url: string): Promise<OptimizedDocumentImage> {
+export async function optimizeDocumentImage(url: string, options: { crop?: boolean } = {}): Promise<OptimizedDocumentImage> {
   const image = await loadImage(url);
   const originalWidth = image.naturalWidth;
   const originalHeight = image.naturalHeight;
@@ -114,7 +114,9 @@ export async function optimizeDocumentImage(url: string): Promise<OptimizedDocum
   if (!analysisContext) throw new Error('Die lokale Bildoptimierung ist auf diesem Gerät nicht verfügbar.');
   analysisContext.drawImage(image, 0, 0, analysisCanvas.width, analysisCanvas.height);
   const imageData = analysisContext.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
-  const detected = findDocumentBounds(imageData.data, analysisCanvas.width, analysisCanvas.height);
+  const detected = options.crop === false
+    ? { left: 0, top: 0, width: analysisCanvas.width, height: analysisCanvas.height }
+    : findDocumentBounds(imageData.data, analysisCanvas.width, analysisCanvas.height);
   const scaleBack = 1 / analysisScale;
   const source = {
     left: Math.round(detected.left * scaleBack),

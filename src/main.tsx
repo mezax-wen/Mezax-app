@@ -35,6 +35,7 @@ import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './a
 import { assignAndSortFolderDocument, canAssignFolderDocumentSlot, folderCompleteness, rentalWatermark, requiredDocumentOrder, safeFolderFileName, slotAllowsMultipleDocuments, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
+import { calculateCameraCrop } from './application/cameraCrop';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
@@ -477,6 +478,7 @@ function App() {
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
   const [cameraError, setCameraError] = useState('');
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraGuideRef = useRef<HTMLDivElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const [watermark, setWatermark] = useState(() => rentalWatermark(address));
   const [watermarkCustomized, setWatermarkCustomized] = useState(false);
@@ -896,11 +898,21 @@ function App() {
     }
 
     setCameraStatus('capturing');
+    const videoRect = video.getBoundingClientRect();
+    const guideRect = cameraGuideRef.current?.getBoundingClientRect();
+    const crop = guideRect
+      ? calculateCameraCrop(
+        { width: video.videoWidth, height: video.videoHeight },
+        { left: videoRect.left, top: videoRect.top, width: videoRect.width, height: videoRect.height },
+        { left: guideRect.left, top: guideRect.top, width: guideRect.width, height: guideRect.height },
+        cameraFacing === 'user',
+      )
+      : { x: 0, y: 0, width: video.videoWidth, height: video.videoHeight };
     const maxDimension = 2600;
-    const scale = Math.min(1, maxDimension / Math.max(video.videoWidth, video.videoHeight));
+    const scale = Math.min(1, maxDimension / Math.max(crop.width, crop.height));
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    canvas.width = Math.max(1, Math.round(crop.width * scale));
+    canvas.height = Math.max(1, Math.round(crop.height * scale));
     const context = canvas.getContext('2d', { alpha: false });
     if (!context) {
       setCameraStatus('ready');
@@ -908,7 +920,17 @@ function App() {
       return;
     }
 
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    context.drawImage(
+      video,
+      crop.x,
+      crop.y,
+      crop.width,
+      crop.height,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
     canvas.toBlob((blob) => {
       if (!blob) {
         setCameraStatus('ready');
@@ -2143,7 +2165,7 @@ function App() {
 
           {cameraStatus !== 'error' && (
             <div className="documentGuide" aria-hidden="true">
-              <div className="documentGuideFrame">
+              <div ref={cameraGuideRef} className="documentGuideFrame">
                 <i className="topLeft" />
                 <i className="topRight" />
                 <i className="bottomLeft" />

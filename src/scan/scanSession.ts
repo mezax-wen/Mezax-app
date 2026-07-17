@@ -12,3 +12,7 @@ export function moveScanPage<T>(pages: readonly T[], index: number, direction: -
 export function removeScanPage<T extends { id: string }>(pages: readonly T[], id: string): T[] {
   return pages.filter((page) => page.id !== id);
 }
+
+export function replaceScanPage<T extends { id: string }>(pages: readonly T[], id: string, replacement: T): T[] {
+  return pages.map((page) => page.id === id ? replacement : page);
+}

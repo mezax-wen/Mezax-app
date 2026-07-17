@@ -1,4 +1,4 @@
-import { moveScanPage, removeScanPage } from './scanSession.ts';
+import { moveScanPage, removeScanPage, replaceScanPage } from './scanSession.ts';
 
 const pages = [
   { id: 'a', name: 'Seite 1' },
@@ -18,6 +18,14 @@ if (moveScanPage(pages, 0, -1).map((page) => page.id).join(',') !== 'a,b,c') {
 }
 if (removeScanPage(pages, 'b').map((page) => page.id).join(',') !== 'a,c') {
   throw new Error('Eine Scan-Seite wurde nicht korrekt entfernt.');
+}
+
+const replaced = replaceScanPage(pages, 'b', { id: 'b', name: 'Neue Seite 2' });
+if (replaced.map((page) => page.name).join(',') !== 'Seite 1,Neue Seite 2,Seite 3') {
+  throw new Error('Eine Scan-Seite wurde nicht an ihrer bisherigen Position ersetzt.');
+}
+if (pages[1].name !== 'Seite 2') {
+  throw new Error('Beim Ersetzen darf die urspruengliche Seitenliste nicht veraendert werden.');
 }
 
 console.info('Mehrseiten-Scan: Reihenfolge und Löschen funktionieren.');

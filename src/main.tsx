@@ -34,7 +34,7 @@ import { findIdentityDocumentNumber, findLabeledIdentityDocumentNumber, findVali
 import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './ai/privacyRecommendations';
 import { assignAndSortFolderDocument, canAssignFolderDocumentSlot, folderCompleteness, rentalWatermark, requiredDocumentOrder, safeFolderFileName, slotAllowsMultipleDocuments, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
-import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
+import { createManualBox, scaleDocumentBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { calculateCameraCrop, fitCameraCaptureSize } from './application/cameraCrop';
 import { measureFrameMovement, measureFrameSharpness } from './application/cameraFrameSelection';
 import { nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
@@ -344,6 +344,19 @@ async function loadBrowserImage(url: string) {
   image.src = url;
   await image.decode();
   return image;
+}
+
+function detectionBoxForImage(
+  detection: Detection,
+  scan: ScanResult,
+  targetWidth: number,
+  targetHeight: number,
+) {
+  return scaleDocumentBox(
+    detection.bbox,
+    { width: scan.width, height: scan.height },
+    { width: targetWidth, height: targetHeight },
+  );
 }
 
 async function renderImageAsPng(url: string, width = 520, height = 640) {
@@ -1660,12 +1673,15 @@ function App() {
     context.drawImage(image, 0, 0);
     context.fillStyle = '#000000';
     for (const detection of scan.detections.filter((item) => item.selected)) {
-      const padding = Math.max(3, Math.round(detection.bbox.height * 0.12));
+      const box = detectionBoxForImage(detection, scan, canvas.width, canvas.height);
+      const padding = Math.max(3, Math.round(box.height * 0.12));
+      const left = Math.max(0, box.left - padding);
+      const top = Math.max(0, box.top - padding);
       context.fillRect(
-        Math.max(0, detection.bbox.left - padding),
-        Math.max(0, detection.bbox.top - padding),
-        Math.min(canvas.width, detection.bbox.width + padding * 2),
-        Math.min(canvas.height, detection.bbox.height + padding * 2),
+        left,
+        top,
+        Math.min(canvas.width - left, box.width + padding * 2),
+        Math.min(canvas.height - top, box.height + padding * 2),
       );
     }
 
@@ -1943,10 +1959,11 @@ function App() {
         const scan = scans[doc.id];
         const planEntry = planByDocument.get(doc.id);
         if (!scan?.renderedUrl || !planEntry) continue;
-        const image = await loadBrowserImage(scan.renderedUrl);
-        const pages = scan.pdfPages?.length
-          ? scan.pdfPages
-          : [{ top: 0, width: scan.width || image.naturalWidth, height: scan.height || image.naturalHeight }];
+        const isPdfDocument = Boolean(scan.pdfPages?.length);
+        const image = await loadBrowserImage(isPdfDocument ? scan.renderedUrl : doc.url);
+        const pages = isPdfDocument
+          ? scan.pdfPages!
+          : [{ top: 0, width: image.naturalWidth, height: image.naturalHeight }];
 
         for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
           const page = pages[pageIndex];
@@ -1961,14 +1978,19 @@ function App() {
           context.fillStyle = '#000000';
 
           for (const detection of scan.detections.filter((item) => item.selected)) {
-            const centerY = detection.bbox.top + detection.bbox.height / 2;
+            const box = isPdfDocument
+              ? detection.bbox
+              : detectionBoxForImage(detection, scan, page.width, page.height);
+            const centerY = box.top + box.height / 2;
             if (centerY < page.top || centerY >= page.top + page.height) continue;
-            const padding = Math.max(3, Math.round(detection.bbox.height * 0.12));
+            const padding = Math.max(3, Math.round(box.height * 0.12));
+            const left = Math.max(0, box.left - padding);
+            const top = Math.max(0, box.top - page.top - padding);
             context.fillRect(
-              Math.max(0, detection.bbox.left - padding),
-              Math.max(0, detection.bbox.top - page.top - padding),
-              Math.min(page.width, detection.bbox.width + padding * 2),
-              Math.min(page.height, detection.bbox.height + padding * 2),
+              left,
+              top,
+              Math.min(page.width - left, box.width + padding * 2),
+              Math.min(page.height - top, box.height + padding * 2),
             );
           }
 

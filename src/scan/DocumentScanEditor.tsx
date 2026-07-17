@@ -9,6 +9,7 @@ import {
   type ScanFilter,
 } from './documentPerspective';
 import { analyzeDocumentScanQuality, type ScanQualityResult } from './scanQuality';
+import { fitPreviewToStage, type PreviewSize } from './previewGeometry';
 
 type CornerKey = keyof DocumentCorners;
 
@@ -55,7 +56,10 @@ export default function DocumentScanEditor({
   const [quality, setQuality] = useState<ScanQualityResult | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const imageFrameRef = useRef<HTMLDivElement | null>(null);
+  const [sourceSize, setSourceSize] = useState<PreviewSize | null>(null);
+  const [previewSize, setPreviewSize] = useState<PreviewSize | null>(null);
   const cornersValid = isValidDocumentCorners(corners);
 
   useEffect(() => {
@@ -65,9 +69,12 @@ export default function DocumentScanEditor({
     setQualityStatus('idle');
     setError('');
     setAnalysisMessage('');
+    setSourceSize(null);
+    setPreviewSize(null);
     analyzeDocumentCorners(sourceUrl)
       .then((result) => {
         if (!active) return;
+        setSourceSize({ width: result.width, height: result.height });
         setCorners(result.corners);
         setAnalysisStatus(result.automatic ? 'detected' : 'fallback');
         setAnalysisMessage(result.message);
@@ -84,6 +91,35 @@ export default function DocumentScanEditor({
       active = false;
     };
   }, [sourceUrl]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !sourceSize) return;
+
+    const updatePreviewSize = () => {
+      const styles = window.getComputedStyle(stage);
+      const horizontalPadding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
+      const verticalPadding = Number.parseFloat(styles.paddingTop) + Number.parseFloat(styles.paddingBottom);
+      const next = fitPreviewToStage(
+        sourceSize.width,
+        sourceSize.height,
+        Math.max(1, stage.clientWidth - horizontalPadding),
+        Math.max(1, stage.clientHeight - verticalPadding),
+      );
+      setPreviewSize((current) => (
+        current?.width === next.width && current.height === next.height ? current : next
+      ));
+    };
+
+    updatePreviewSize();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePreviewSize);
+    observer?.observe(stage);
+    window.addEventListener('resize', updatePreviewSize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updatePreviewSize);
+    };
+  }, [sourceSize]);
 
   useEffect(() => {
     if (analysisStatus === 'loading') return;
@@ -184,12 +220,20 @@ export default function DocumentScanEditor({
         </div>
       </div>
 
-      <div className="scanEditorStage">
-        <div ref={imageFrameRef} className="scanEditorImageFrame">
+      <div ref={stageRef} className="scanEditorStage">
+        <div
+          ref={imageFrameRef}
+          className={`scanEditorImageFrame${previewSize ? ' fitted' : ''}`}
+          style={previewSize ? { width: `${previewSize.width}px`, height: `${previewSize.height}px` } : undefined}
+        >
           <img
             src={sourceUrl}
             alt="Aufgenommenes Dokument mit erkannten Rändern"
             style={{ filter: previewFilter(filter) }}
+            onLoad={(event) => setSourceSize({
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            })}
           />
           <svg className="scanCornerPolygon" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
             <polygon points={points} />

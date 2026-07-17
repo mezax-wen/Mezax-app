@@ -36,7 +36,7 @@ import { assignAndSortFolderDocument, canAssignFolderDocumentSlot, folderComplet
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { calculateCameraCrop, fitCameraCaptureSize } from './application/cameraCrop';
-import { measureFrameSharpness } from './application/cameraFrameSelection';
+import { measureFrameMovement, measureFrameSharpness } from './application/cameraFrameSelection';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
@@ -484,6 +484,7 @@ function App() {
   const [cameraScanSession, setCameraScanSession] = useState<CameraScanSession | null>(null);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
+  const [cameraCapturePhase, setCameraCapturePhase] = useState<'stabilizing' | 'selecting'>('stabilizing');
   const [cameraError, setCameraError] = useState('');
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraGuideRef = useRef<HTMLDivElement | null>(null);
@@ -545,13 +546,28 @@ function App() {
 
         const track = stream.getVideoTracks()[0];
         try {
-          const capabilities = track?.getCapabilities?.();
+          const capabilities = track?.getCapabilities?.() as (MediaTrackCapabilities & {
+            focusMode?: string[];
+            exposureMode?: string[];
+            whiteBalanceMode?: string[];
+          }) | undefined;
           const maximumWidth = capabilities?.width?.max;
           const maximumHeight = capabilities?.height?.max;
-          if (maximumWidth && maximumHeight) {
+          const cameraModes: MediaTrackConstraintSet & {
+            focusMode?: string;
+            exposureMode?: string;
+            whiteBalanceMode?: string;
+          } = {};
+          if (capabilities?.focusMode?.includes('continuous')) cameraModes.focusMode = 'continuous';
+          if (capabilities?.exposureMode?.includes('continuous')) cameraModes.exposureMode = 'continuous';
+          if (capabilities?.whiteBalanceMode?.includes('continuous')) cameraModes.whiteBalanceMode = 'continuous';
+          const maximumResolution = maximumWidth && maximumHeight
+            ? { width: { ideal: maximumWidth }, height: { ideal: maximumHeight } }
+            : {};
+          if (Object.keys(maximumResolution).length || Object.keys(cameraModes).length) {
             await track.applyConstraints({
-              width: { ideal: maximumWidth },
-              height: { ideal: maximumHeight },
+              ...maximumResolution,
+              ...(Object.keys(cameraModes).length ? { advanced: [cameraModes] } : {}),
             });
           }
         } catch {
@@ -931,6 +947,7 @@ function App() {
     }
 
     setCameraStatus('capturing');
+    setCameraCapturePhase('stabilizing');
     const videoRect = video.getBoundingClientRect();
     const guideRect = cameraGuideRef.current?.getBoundingClientRect();
     const crop = guideRect
@@ -955,7 +972,12 @@ function App() {
     analysisCanvas.width = Math.max(3, Math.round(captureSize.width * analysisScale));
     analysisCanvas.height = Math.max(3, Math.round(captureSize.height * analysisScale));
     const analysisContext = analysisCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
-    if (!candidateContext || !bestContext || !analysisContext) {
+    const motionCanvas = document.createElement('canvas');
+    const motionScale = Math.min(1, 180 / Math.max(captureSize.width, captureSize.height));
+    motionCanvas.width = Math.max(3, Math.round(captureSize.width * motionScale));
+    motionCanvas.height = Math.max(3, Math.round(captureSize.height * motionScale));
+    const motionContext = motionCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+    if (!candidateContext || !bestContext || !analysisContext || !motionContext) {
       setCameraStatus('ready');
       setCameraError('Das Foto konnte nicht aufgenommen werden.');
       return;
@@ -967,10 +989,36 @@ function App() {
     bestContext.imageSmoothingQuality = 'high';
     analysisContext.imageSmoothingEnabled = true;
     analysisContext.imageSmoothingQuality = 'high';
+    motionContext.imageSmoothingEnabled = true;
+    motionContext.imageSmoothingQuality = 'high';
 
-    // Eine kurze Pause entkoppelt das Tippen auf den Auslöser von der Aufnahme.
-    // Anschließend bleibt aus einer lokalen Bildserie nur das schärfste Vollbild erhalten.
-    await new Promise((resolve) => window.setTimeout(resolve, 160));
+    // Erst zwei ruhige Bildwechsel abwarten. Nach spätestens 1,2 Sekunden wird trotzdem
+    // ausgelöst, damit der Nutzer nie in der Stabilitätsprüfung hängen bleibt.
+    const stabilityDeadline = performance.now() + 1200;
+    let previousMotionFrame: Uint8ClampedArray | null = null;
+    let stableComparisons = 0;
+    while (performance.now() < stabilityDeadline && stableComparisons < 2) {
+      motionContext.drawImage(
+        video,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+        0,
+        0,
+        motionCanvas.width,
+        motionCanvas.height,
+      );
+      const motionFrame = motionContext.getImageData(0, 0, motionCanvas.width, motionCanvas.height).data;
+      if (previousMotionFrame) {
+        const movement = measureFrameMovement(previousMotionFrame, motionFrame, motionCanvas.width, motionCanvas.height);
+        stableComparisons = movement <= 4.8 ? stableComparisons + 1 : 0;
+      }
+      previousMotionFrame = new Uint8ClampedArray(motionFrame);
+      if (stableComparisons < 2) await new Promise((resolve) => window.setTimeout(resolve, 75));
+    }
+
+    setCameraCapturePhase('selecting');
     let bestScore = Number.NEGATIVE_INFINITY;
     const frameCount = 4;
     for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
@@ -2290,7 +2338,9 @@ function App() {
           {(cameraStatus === 'loading' || cameraStatus === 'capturing') && (
             <div className="cameraLiveLoading">
               <LoaderCircle className="spin" />
-              <b>{cameraStatus === 'capturing' ? 'Schärfstes Bild wird gewählt – kurz ruhig halten …' : 'Kamera wird geöffnet …'}</b>
+              <b>{cameraStatus === 'capturing'
+                ? (cameraCapturePhase === 'stabilizing' ? 'Bitte kurz ruhig halten …' : 'Schärfstes Bild wird gewählt …')
+                : 'Kamera wird geöffnet …'}</b>
             </div>
           )}
 

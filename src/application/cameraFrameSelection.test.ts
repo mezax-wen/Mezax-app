@@ -1,4 +1,4 @@
-import { measureFrameSharpness, selectSharpestFrame } from './cameraFrameSelection';
+import { measureFrameMovement, measureFrameSharpness, selectSharpestFrame } from './cameraFrameSelection';
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
@@ -30,5 +30,14 @@ assert(sharpScore > softScore, 'Klare Textkanten müssen schärfer bewertet werd
 assert(selectSharpestFrame([softScore, sharpScore, softScore]) === 1, 'Das schärfste Bild muss ausgewählt werden.');
 assert(selectSharpestFrame([]) === -1, 'Eine leere Bildserie hat kein bestes Bild.');
 assert(selectSharpestFrame([5, 5, 4]) === 0, 'Bei Gleichstand bleibt das erste scharfe Bild erhalten.');
+
+const unchangedMovement = measureFrameMovement(sharpTextLikePattern, sharpTextLikePattern, width, height);
+const brighterPattern = imagePixels(width, height, (x) => Math.min(255, (Math.floor(x / 3) % 2 ? 230 : 25) + 15));
+const brightnessOnlyMovement = measureFrameMovement(sharpTextLikePattern, brighterPattern, width, height);
+const shiftedPattern = imagePixels(width, height, (x) => (Math.floor((x + 2) / 3) % 2 ? 230 : 25));
+const shiftedMovement = measureFrameMovement(sharpTextLikePattern, shiftedPattern, width, height);
+assert(unchangedMovement === 0, 'Identische Bilder dürfen keine Bewegung melden.');
+assert(brightnessOnlyMovement < 0.01, 'Eine gleichmäßige Belichtungsänderung darf nicht als Bewegung gelten.');
+assert(shiftedMovement > 20, 'Eine verschobene Dokumentstruktur muss als Bewegung erkannt werden.');
 
 console.log('cameraFrameSelection tests passed');

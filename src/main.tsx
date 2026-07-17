@@ -8,7 +8,9 @@ import { jsPDF } from 'jspdf';
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Camera,
   Check,
   ChevronRight,
@@ -25,6 +27,7 @@ import {
   Upload,
   UserRound,
   WandSparkles,
+  Trash2,
   X,
 } from 'lucide-react';
 import './styles.css';
@@ -46,6 +49,7 @@ import { optimizeDocumentImage, type SmartScanEnhancement } from './scan/imageOp
 import { createMultiPageDocument, shouldBundleSelection } from './scan/multiPageDocument';
 import DocumentScanEditor from './scan/DocumentScanEditor';
 import { findDocumentCorners, isSafeAutomaticCrop, type DocumentCornerDetectionMeta } from './scan/documentPerspective';
+import { moveScanPage, removeScanPage } from './scan/scanSession';
 import {
   listApplicationDrafts,
   loadApplicationDraft,
@@ -154,8 +158,14 @@ type CameraTarget = {
   targetDocumentId?: number;
 };
 
+type CameraScanPage = {
+  id: string;
+  file: File;
+  url: string;
+};
+
 type CameraScanSession = CameraTarget & {
-  pages: File[];
+  pages: CameraScanPage[];
 };
 
 const required = requiredDocumentOrder;
@@ -497,6 +507,8 @@ function App() {
   const [pendingCameraCapture, setPendingCameraCapture] = useState<PendingCameraCapture | null>(null);
   const [cameraTarget, setCameraTarget] = useState<CameraTarget | null>(null);
   const [cameraScanSession, setCameraScanSession] = useState<CameraScanSession | null>(null);
+  const [cameraSessionReviewOpen, setCameraSessionReviewOpen] = useState(false);
+  const [cameraSessionSaving, setCameraSessionSaving] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
   const [cameraCapturePhase, setCameraCapturePhase] = useState<'stabilizing' | 'selecting'>('stabilizing');
@@ -842,6 +854,8 @@ function App() {
     for (const doc of docs) URL.revokeObjectURL(doc.url);
     if (applicantPhoto) URL.revokeObjectURL(applicantPhoto.url);
     if (preparedFolder) URL.revokeObjectURL(preparedFolder.url);
+    if (pendingCameraCapture) URL.revokeObjectURL(pendingCameraCapture.url);
+    for (const page of cameraScanSession?.pages ?? []) URL.revokeObjectURL(page.url);
   }
 
   function resetWorkspace() {
@@ -851,6 +865,8 @@ function App() {
     setPreview(null);
     setPendingCameraCapture(null);
     setCameraScanSession(null);
+    setCameraSessionReviewOpen(false);
+    setCameraSessionSaving(false);
     setScans({});
     setRedactionsApplied({});
     setPreparedFolder(null);
@@ -994,8 +1010,29 @@ function App() {
     if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
   }
 
+  function createCameraScanPage(file: File): CameraScanPage {
+    return {
+      id: createDraftId(),
+      file,
+      url: URL.createObjectURL(file),
+    };
+  }
+
+  function clearCameraScanSession() {
+    setCameraScanSession((current) => {
+      for (const page of current?.pages ?? []) URL.revokeObjectURL(page.url);
+      return null;
+    });
+    setCameraSessionReviewOpen(false);
+    setCameraSessionSaving(false);
+  }
+
   function openDocumentCamera(slot?: RequiredDocument, targetDocumentId?: number, keepSession = false) {
-    if (!keepSession) setCameraScanSession({ slot, targetDocumentId, pages: [] });
+    if (!keepSession) {
+      clearCameraScanSession();
+      setCameraScanSession({ slot, targetDocumentId, pages: [] });
+    }
+    setCameraSessionReviewOpen(false);
     setCameraFacing('environment');
     setCameraError('');
     setCameraStatus('loading');
@@ -1011,7 +1048,7 @@ function App() {
     setCameraTarget(null);
     setCameraStatus('idle');
     setCameraError('');
-    if (!preserveSession) setCameraScanSession(null);
+    if (!preserveSession) clearCameraScanSession();
     return true;
   }
 
@@ -1204,7 +1241,7 @@ function App() {
       if (current) URL.revokeObjectURL(current.url);
       return null;
     });
-    if (!preserveSession) setCameraScanSession(null);
+    if (!preserveSession) clearCameraScanSession();
   }
 
   async function continueCameraCapture(processedFile?: File) {
@@ -1212,12 +1249,16 @@ function App() {
     if (!capture) return;
     const selectedFile = processedFile ?? capture.file;
     setCameraScanSession((current) => {
+      const page = createCameraScanPage(selectedFile);
       const matches = current?.slot === capture.slot
         && current?.targetDocumentId === capture.targetDocumentId;
+      if (!matches) {
+        for (const previousPage of current?.pages ?? []) URL.revokeObjectURL(previousPage.url);
+      }
       return {
         slot: capture.slot,
         targetDocumentId: capture.targetDocumentId,
-        pages: [...(matches ? current.pages : []), selectedFile],
+        pages: [...(matches ? current.pages : []), page],
       };
     });
     setPendingCameraCapture(null);
@@ -1231,24 +1272,84 @@ function App() {
     const selectedFile = processedFile ?? capture.file;
     const sessionMatches = cameraScanSession?.slot === capture.slot
       && cameraScanSession?.targetDocumentId === capture.targetDocumentId;
-    const pages = [...(sessionMatches ? cameraScanSession.pages : []), selectedFile];
+    const storedPages = sessionMatches ? cameraScanSession.pages : [];
+
+    if (storedPages.length) {
+      const page = createCameraScanPage(selectedFile);
+      setCameraScanSession({
+        slot: capture.slot,
+        targetDocumentId: capture.targetDocumentId,
+        pages: [...storedPages, page],
+      });
+      setPendingCameraCapture(null);
+      URL.revokeObjectURL(capture.url);
+      setCameraSessionReviewOpen(true);
+      return;
+    }
 
     if (capture.targetDocumentId !== undefined) {
-      const appended = await appendPagesToDocument(capture.targetDocumentId, pages);
+      const appended = await appendPagesToDocument(capture.targetDocumentId, [selectedFile]);
       if (!appended) {
         throw new Error('Die gescannten Seiten konnten nicht hinzugefügt werden. Sie bleiben zum erneuten Versuch geöffnet.');
       }
     } else {
-      const fileToAdd = pages.length > 1
-        ? await createMultiPageDocument(pages, capture.slot)
-        : selectedFile;
-      const addedDocuments = await addFiles([fileToAdd], capture.slot);
+      const addedDocuments = await addFiles([selectedFile], capture.slot);
       if (!addedDocuments.length) throw new Error('Die gescannten Seiten konnten nicht gespeichert werden.');
     }
 
     setPendingCameraCapture(null);
-    setCameraScanSession(null);
+    clearCameraScanSession();
     URL.revokeObjectURL(capture.url);
+  }
+
+  function moveCameraScanPage(index: number, direction: -1 | 1) {
+    setCameraScanSession((current) => current
+      ? { ...current, pages: moveScanPage(current.pages, index, direction) }
+      : current);
+  }
+
+  function deleteCameraScanPage(id: string) {
+    setCameraScanSession((current) => {
+      if (!current) return current;
+      const page = current.pages.find((item) => item.id === id);
+      if (page) URL.revokeObjectURL(page.url);
+      return { ...current, pages: removeScanPage(current.pages, id) };
+    });
+  }
+
+  function continueCameraScanSession() {
+    const session = cameraScanSession;
+    if (!session || cameraSessionSaving) return;
+    setCameraSessionReviewOpen(false);
+    openDocumentCamera(session.slot, session.targetDocumentId, true);
+  }
+
+  async function saveCameraScanSession() {
+    const session = cameraScanSession;
+    if (!session?.pages.length || cameraSessionSaving) return;
+    setCameraSessionSaving(true);
+    const files = session.pages.map((page) => page.file);
+
+    try {
+      if (session.targetDocumentId !== undefined) {
+        const appended = await appendPagesToDocument(session.targetDocumentId, files);
+        if (!appended) throw new Error('Die Scan-Seiten konnten nicht hinzugefügt werden.');
+      } else {
+        const fileToAdd = files.length > 1
+          ? await createMultiPageDocument(files, session.slot)
+          : files[0];
+        const addedDocuments = await addFiles([fileToAdd], session.slot);
+        if (!addedDocuments.length) throw new Error('Die Scan-Seiten konnten nicht gespeichert werden.');
+      }
+
+      setUploadNotice(files.length > 1
+        ? files.length + ' Scan-Seiten wurden lokal zu einem Dokument zusammengefügt.'
+        : 'Die Scan-Seite wurde lokal gespeichert.');
+      clearCameraScanSession();
+    } catch (error) {
+      setUploadNotice(error instanceof Error ? error.message : 'Die Scan-Seiten konnten nicht gespeichert werden.');
+      setCameraSessionSaving(false);
+    }
   }
   async function addFiles(fileList: ArrayLike<File> | null, slot?: RequiredDocument): Promise<Doc[]> {
     if (!fileList) return [];
@@ -2505,6 +2606,66 @@ function App() {
     );
   };
 
+  const CameraSessionReview = () => {
+    const session = cameraScanSession;
+    if (!cameraSessionReviewOpen || !session) return null;
+
+    return (
+      <div className="cameraSessionReview" role="dialog" aria-modal="true" aria-label="Scan-Seiten prüfen">
+        <header className="cameraSessionReviewTop">
+          <button className="icon" type="button" disabled={cameraSessionSaving} onClick={() => {
+            if (!session.pages.length || window.confirm('Alle aufgenommenen Seiten verwerfen?')) clearCameraScanSession();
+          }} aria-label="Scan verwerfen"><X /></button>
+          <span>
+            <b>Seiten prüfen</b>
+            <small className="cameraSessionReviewSafe">{session.slot ?? 'Dokument'} - {session.pages.length} Seite(n) - bleibt lokal</small>
+          </span>
+        </header>
+
+        <section className="cameraSessionReviewBody">
+          <div className="cameraSessionIntro">
+            <Images />
+            <span><b>Stimmt die Reihenfolge?</b><small>Verschiebe oder lösche Seiten, bevor Mezax das Dokument erstellt.</small></span>
+          </div>
+
+          {session.pages.length ? (
+            <div className="cameraSessionPages">
+              {session.pages.map((page, index) => (
+                <article className="cameraSessionPage" key={page.id}>
+                  <div className="cameraSessionThumbnail">
+                    <img src={page.url} alt={'Vorschau Seite ' + (index + 1)} />
+                    <strong>{index + 1}</strong>
+                  </div>
+                  <div className="cameraSessionPageMeta">
+                    <b>Seite {index + 1}</b>
+                    <small>{page.file.name}</small>
+                    <div>
+                      <button type="button" disabled={index === 0 || cameraSessionSaving} onClick={() => moveCameraScanPage(index, -1)} aria-label={'Seite ' + (index + 1) + ' nach vorne'}><ArrowUp /></button>
+                      <button type="button" disabled={index === session.pages.length - 1 || cameraSessionSaving} onClick={() => moveCameraScanPage(index, 1)} aria-label={'Seite ' + (index + 1) + ' nach hinten'}><ArrowDown /></button>
+                      <button className="danger" type="button" disabled={cameraSessionSaving} onClick={() => deleteCameraScanPage(page.id)} aria-label={'Seite ' + (index + 1) + ' löschen'}><Trash2 /></button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="cameraSessionEmpty"><Camera /><b>Noch keine Seite vorhanden</b><small>Fotografiere mindestens eine Seite.</small></div>
+          )}
+        </section>
+
+        <footer className="cameraSessionReviewActions">
+          <p><ShieldCheck /> Deine Aufnahmen werden nur in diesem Browser verarbeitet.</p>
+          <div>
+            <button className="secondary" type="button" disabled={cameraSessionSaving} onClick={continueCameraScanSession}><Plus /> Weitere Seite</button>
+            <button className="primary" type="button" disabled={!session.pages.length || cameraSessionSaving} onClick={() => void saveCameraScanSession()}>
+              {cameraSessionSaving ? <><LoaderCircle className="spin" /> Wird erstellt .</> : <><Check /> Dokument speichern</>}
+            </button>
+          </div>
+        </footer>
+      </div>
+    );
+  };
+
   if (screen === 'welcome') {
     return (
       <main className="app welcome">
@@ -2854,6 +3015,7 @@ function App() {
         <Preview />
         {DocumentCamera()}
         <CameraCaptureReview />
+        <CameraSessionReview />
       </main>
     );
   }

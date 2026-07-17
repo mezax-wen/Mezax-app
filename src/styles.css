@@ -267,3 +267,29 @@ header{background:#fff}
 .scanEditorActions .scanUseAction{grid-column:1/-1}
 @media(max-height:760px){.scanQualityMetrics{display:none}.scanQualityCard{padding:7px 9px}.scanEditorImageFrame>img{max-height:calc(100dvh - 365px)}}
 @media(max-width:350px){.scanQualityMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}.scanEditorActions{grid-template-columns:.8fr 1.2fr}}
+
+/* Multi-page scan review */
+.cameraSessionReview{position:fixed;z-index:230;inset:0;margin:auto;width:min(100%,430px);height:100vh;height:100dvh;background:#06151d;color:#f4fbfd;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;overscroll-behavior:none}
+.cameraSessionReviewTop{min-height:70px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;display:grid;grid-template-columns:44px minmax(0,1fr);gap:11px;align-items:center;background:#081c27;border-bottom:1px solid #1a3541}
+.cameraSessionReviewTop .icon{width:44px;height:44px;margin:0;border:1px solid #2b4956;background:#112d38;color:#f6fbfc}
+.cameraSessionReviewTop>span{display:grid;gap:2px;min-width:0}
+.cameraSessionReviewTop b{font-size:16px}
+.cameraSessionReviewTop small{overflow:hidden;color:#9db3bd;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.cameraSessionReviewBody{min-height:0;padding:14px;overflow-y:auto;overscroll-behavior:contain}
+.cameraSessionIntro{display:flex;align-items:flex-start;gap:10px;margin-bottom:13px;padding:11px;border:1px solid #236f62;border-radius:12px;background:#0d2d2d}
+.cameraSessionIntro>svg{width:22px;height:22px;flex:0 0 auto;color:#42dfb7}
+.cameraSessionIntro>span{display:grid;gap:2px}
+.cameraSessionIntro b{font-size:12px}
+.cameraSessionIntro small{color:#a9bec4;font-size:9px;line-height:1.4}
+.cameraSessionPages{display:grid;gap:11px}
+.cameraSessionPage{display:grid;grid-template-columns:105px minmax(0,1fr);gap:12px;padding:10px;border:1px solid #294552;border-radius:14px;background:#0d2430;box-shadow:0 7px 20px #0003}
+.cameraSessionThumbnail{position:relative;overflow:hidden;height:138px;border-radius:9px;background:#fff;display:grid;place-items:center}
+.cameraSessionThumbnail img{display:block;width:100%;height:100%;object-fit:contain}
+.cameraSessionThumbnail strong{position:absolute;left:6px;top:6px;min-width:24px;height:24px;padding:0 6px;border-radius:999px;background:#12b989;color:#fff;display:grid;place-items:center;font-size:10px;box-shadow:0 2px 8px #0018}
+.cameraSessionPageMeta{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:5px}
+.cameraSessionPageMeta>b{font-size:13px}.cameraSessionPageMeta>small{overflow:hidden;color:#9fb3bc;font-size:9px;text-overflow:ellipsis;white-space:nowrap}
+.cameraSessionPageMeta>div{display:grid;grid-template-columns:repeat(3,38px);gap:6px;margin-top:8px}
+.cameraSessionPageMeta button{width:38px;height:38px;padding:0;border:1px solid #365360;border-radius:9px;background:#16323e;color:#d8e7ea;display:grid;place-items:center}.cameraSessionPageMeta button svg{width:17px}.cameraSessionPageMeta button:disabled{opacity:.28}.cameraSessionPageMeta button.danger{border-color:#75424a;background:#3b252b;color:#ff9ca1}
+.cameraSessionEmpty{min-height:180px;border:1px dashed #37515c;border-radius:14px;color:#9db1ba;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center}.cameraSessionEmpty svg{width:30px;color:#42dcb5}.cameraSessionEmpty b{color:#eef8fa;font-size:12px}.cameraSessionEmpty small{font-size:9px}
+.cameraSessionReviewActions{padding:11px 14px calc(14px + env(safe-area-inset-bottom,0px));background:#081c27;border-top:1px solid #1a3541}.cameraSessionReviewActions>p{margin:0 0 9px;color:#9db3bd;display:flex;align-items:center;justify-content:center;gap:6px;font-size:9px}.cameraSessionReviewActions>p svg{width:15px;color:#36d9ae}.cameraSessionReviewActions>div{display:grid;grid-template-columns:.9fr 1.25fr;gap:8px}.cameraSessionReviewActions .primary,.cameraSessionReviewActions .secondary{min-width:0;min-height:50px;margin:0;padding:8px;font-size:11px;line-height:1.15}.cameraSessionReviewActions .secondary{border-color:#39806f;background:#102d35;color:#64e7c4}.cameraSessionReviewActions svg{width:18px;flex:0 0 auto}
+@media(max-width:350px){.cameraSessionPage{grid-template-columns:88px minmax(0,1fr)}.cameraSessionThumbnail{height:118px}.cameraSessionReviewActions>div{grid-template-columns:1fr 1.2fr}.cameraSessionReviewActions .primary,.cameraSessionReviewActions .secondary{font-size:10px}}

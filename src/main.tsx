@@ -36,6 +36,7 @@ import { assignAndSortFolderDocument, canAssignFolderDocumentSlot, folderComplet
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { calculateCameraCrop, fitCameraCaptureSize } from './application/cameraCrop';
+import { measureFrameSharpness } from './application/cameraFrameSelection';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
@@ -920,7 +921,7 @@ function App() {
     stageCameraCapture(fileList, target.slot, target.targetDocumentId);
   }
 
-  function captureDocumentPhoto() {
+  async function captureDocumentPhoto() {
     const target = cameraTarget;
     const video = cameraVideoRef.current;
     if (!target || !video || !video.videoWidth || !video.videoHeight) {
@@ -941,30 +942,75 @@ function App() {
       )
       : { x: 0, y: 0, width: video.videoWidth, height: video.videoHeight };
     const captureSize = fitCameraCaptureSize(crop);
-    const canvas = document.createElement('canvas');
-    canvas.width = captureSize.width;
-    canvas.height = captureSize.height;
-    const context = canvas.getContext('2d', { alpha: false });
-    if (!context) {
+    const candidateCanvas = document.createElement('canvas');
+    candidateCanvas.width = captureSize.width;
+    candidateCanvas.height = captureSize.height;
+    const candidateContext = candidateCanvas.getContext('2d', { alpha: false });
+    const bestCanvas = document.createElement('canvas');
+    bestCanvas.width = captureSize.width;
+    bestCanvas.height = captureSize.height;
+    const bestContext = bestCanvas.getContext('2d', { alpha: false });
+    const analysisCanvas = document.createElement('canvas');
+    const analysisScale = Math.min(1, 560 / Math.max(captureSize.width, captureSize.height));
+    analysisCanvas.width = Math.max(3, Math.round(captureSize.width * analysisScale));
+    analysisCanvas.height = Math.max(3, Math.round(captureSize.height * analysisScale));
+    const analysisContext = analysisCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+    if (!candidateContext || !bestContext || !analysisContext) {
       setCameraStatus('ready');
       setCameraError('Das Foto konnte nicht aufgenommen werden.');
       return;
     }
 
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = 'high';
-    context.drawImage(
-      video,
-      crop.x,
-      crop.y,
-      crop.width,
-      crop.height,
-      0,
-      0,
-      canvas.width,
-      canvas.height,
-    );
-    canvas.toBlob((blob) => {
+    candidateContext.imageSmoothingEnabled = true;
+    candidateContext.imageSmoothingQuality = 'high';
+    bestContext.imageSmoothingEnabled = true;
+    bestContext.imageSmoothingQuality = 'high';
+    analysisContext.imageSmoothingEnabled = true;
+    analysisContext.imageSmoothingQuality = 'high';
+
+    // Eine kurze Pause entkoppelt das Tippen auf den Auslöser von der Aufnahme.
+    // Anschließend bleibt aus einer lokalen Bildserie nur das schärfste Vollbild erhalten.
+    await new Promise((resolve) => window.setTimeout(resolve, 160));
+    let bestScore = Number.NEGATIVE_INFINITY;
+    const frameCount = 4;
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        await new Promise((resolve) => window.setTimeout(resolve, 70));
+      }
+      candidateContext.drawImage(
+        video,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+        0,
+        0,
+        candidateCanvas.width,
+        candidateCanvas.height,
+      );
+      analysisContext.drawImage(
+        candidateCanvas,
+        0,
+        0,
+        candidateCanvas.width,
+        candidateCanvas.height,
+        0,
+        0,
+        analysisCanvas.width,
+        analysisCanvas.height,
+      );
+      const pixels = analysisContext.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
+      const sharpness = measureFrameSharpness(pixels.data, analysisCanvas.width, analysisCanvas.height);
+      if (sharpness > bestScore) {
+        bestScore = sharpness;
+        bestContext.drawImage(candidateCanvas, 0, 0);
+      }
+      if (frameIndex < frameCount - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 85));
+      }
+    }
+
+    bestCanvas.toBlob((blob) => {
       if (!blob) {
         setCameraStatus('ready');
         setCameraError('Das Foto konnte nicht aufgenommen werden.');
@@ -2244,7 +2290,7 @@ function App() {
           {(cameraStatus === 'loading' || cameraStatus === 'capturing') && (
             <div className="cameraLiveLoading">
               <LoaderCircle className="spin" />
-              <b>{cameraStatus === 'capturing' ? 'Foto wird vorbereitet …' : 'Kamera wird geöffnet …'}</b>
+              <b>{cameraStatus === 'capturing' ? 'Schärfstes Bild wird gewählt – kurz ruhig halten …' : 'Kamera wird geöffnet …'}</b>
             </div>
           )}
 
@@ -2275,7 +2321,7 @@ function App() {
             }} />
           </label>
           <div>
-            <button className="cameraRoundAction" type="button" onClick={() => closeDocumentCamera()} aria-label="Kamera schließen">
+            <button className="cameraRoundAction" type="button" disabled={cameraStatus === 'capturing'} onClick={() => closeDocumentCamera()} aria-label="Kamera schließen">
               <X />
             </button>
             <button className="cameraShutter" type="button" disabled={!cameraReady} onClick={captureDocumentPhoto} aria-label="Dokument fotografieren">

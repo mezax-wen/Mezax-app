@@ -46,3 +46,33 @@ export function selectSharpestFrame(scores: number[]): number {
   }
   return bestIndex;
 }
+export function measureFrameMovement(
+  previous: Uint8ClampedArray,
+  current: Uint8ClampedArray,
+  width: number,
+  height: number,
+): number {
+  const pixelCount = width * height;
+  if (width < 1 || height < 1 || previous.length < pixelCount * 4 || current.length < pixelCount * 4) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  let brightnessShift = 0;
+  for (let index = 0; index < pixelCount; index += 1) {
+    const offset = index * 4;
+    const previousLuminance = previous[offset] * 0.2126 + previous[offset + 1] * 0.7152 + previous[offset + 2] * 0.0722;
+    const currentLuminance = current[offset] * 0.2126 + current[offset + 1] * 0.7152 + current[offset + 2] * 0.0722;
+    brightnessShift += currentLuminance - previousLuminance;
+  }
+  brightnessShift /= pixelCount;
+
+  let difference = 0;
+  for (let index = 0; index < pixelCount; index += 1) {
+    const offset = index * 4;
+    const previousLuminance = previous[offset] * 0.2126 + previous[offset + 1] * 0.7152 + previous[offset + 2] * 0.0722;
+    const currentLuminance = current[offset] * 0.2126 + current[offset + 1] * 0.7152 + current[offset + 2] * 0.0722;
+    difference += Math.abs((currentLuminance - previousLuminance) - brightnessShift);
+  }
+
+  return difference / pixelCount;
+}

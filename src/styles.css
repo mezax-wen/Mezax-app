@@ -257,7 +257,7 @@ header{background:#fff}
 .scanQualityCard.good>svg{color:#3ce0af}
 .scanQualityCard.retry{border-color:#9b4b4f;background:#331d23}
 .scanQualityCard.retry>svg{color:#ff898d}
-.scanQualityMetrics{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:5px}
+.scanQualityMetrics{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:5px}
 .scanQualityMetrics em{display:flex;align-items:center;justify-content:center;gap:3px;min-width:0;padding:5px 3px;border-radius:7px;background:#16323c;color:#bdd0d5;font-size:8px;font-style:normal;font-weight:800}
 .scanQualityMetrics em svg{width:11px;height:11px;flex:0 0 auto}
 .scanQualityMetrics em.good{color:#58dfb7;background:#123a32}

@@ -50,7 +50,7 @@ export default function DocumentScanEditor({
 }: DocumentScanEditorProps) {
   const [corners, setCorners] = useState<DocumentCorners>(defaultCorners);
   const [filter, setFilter] = useState<ScanFilter>('color');
-  const [analysisStatus, setAnalysisStatus] = useState<'loading' | 'detected' | 'fallback' | 'error'>('loading');
+  const [analysisStatus, setAnalysisStatus] = useState<'loading' | 'detected' | 'fallback' | 'manual' | 'error'>('loading');
   const [analysisMessage, setAnalysisMessage] = useState('');
   const [qualityStatus, setQualityStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [quality, setQuality] = useState<ScanQualityResult | null>(null);
@@ -131,7 +131,7 @@ export default function DocumentScanEditor({
     let active = true;
     const timer = window.setTimeout(() => {
       setQualityStatus('loading');
-      analyzeDocumentScanQuality(sourceUrl, corners)
+      analyzeDocumentScanQuality(sourceUrl, corners, analysisStatus === 'detected')
         .then((result) => {
           if (!active) return;
           setQuality(result);
@@ -158,6 +158,8 @@ export default function DocumentScanEditor({
       y: Math.min(0.995, Math.max(0.005, (event.clientY - rect.top) / rect.height)),
     };
     setCorners((current) => ({ ...current, [key]: point }));
+    setAnalysisStatus('manual');
+    setAnalysisMessage('Ecken manuell angepasst. Prüfe, ob das gesamte Blatt innerhalb der Markierung liegt.');
   };
 
   const startCornerDrag = (key: CornerKey, event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -204,6 +206,8 @@ export default function DocumentScanEditor({
     ? 'Ecken ungültig'
     : analysisStatus === 'detected'
     ? 'Blatt sicher erkannt'
+    : analysisStatus === 'manual'
+      ? 'Ecken manuell gesetzt'
     : analysisStatus === 'fallback'
       ? 'Ecken bitte prüfen'
       : analysisStatus === 'loading' ? 'Blatterkennung läuft …' : 'Ecken manuell prüfen';

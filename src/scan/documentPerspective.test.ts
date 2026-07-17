@@ -1,4 +1,4 @@
-import { findDocumentCorners, isSafeAutomaticCrop, isValidDocumentCorners, previewFilter, type DocumentCornerDetectionMeta } from './documentPerspective.ts';
+import { findDocumentCorners, isSafeAutomaticCrop, isSafeDetectedPaperCrop, isValidDocumentCorners, previewFilter, type DocumentCornerDetectionMeta } from './documentPerspective.ts';
 
 const width = 120;
 const height = 120;
@@ -78,6 +78,20 @@ const deceptiveLargeRegion = {
 if (isSafeAutomaticCrop(deceptiveLargeRegion)) {
   throw new Error('Auch eine große innere Teilfläche darf nicht automatisch zugeschnitten werden.');
 }
+if (!isSafeDetectedPaperCrop(deceptiveLargeRegion)) {
+  throw new Error('Nach dem Foto muss ein vollständiges Blatt mit sichtbarem Tischrand zugeschnitten werden.');
+}
+
+const halfPageAtTopEdge = {
+  topLeft: { x: 0.04, y: 0.02 },
+  topRight: { x: 0.96, y: 0.02 },
+  bottomRight: { x: 0.94, y: 0.58 },
+  bottomLeft: { x: 0.05, y: 0.58 },
+};
+if (isSafeDetectedPaperCrop(halfPageAtTopEdge)) {
+  throw new Error('Ein nur teilweise sichtbares Blatt darf nicht automatisch zugeschnitten werden.');
+}
+
 const crossedCorners = {
   topLeft: { x: 0.03, y: 0.03 },
   topRight: { x: 0.96, y: 0.96 },

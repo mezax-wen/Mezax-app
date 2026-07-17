@@ -37,6 +37,7 @@ import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { calculateCameraCrop, fitCameraCaptureSize } from './application/cameraCrop';
 import { measureFrameMovement, measureFrameSharpness } from './application/cameraFrameSelection';
+import { nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
@@ -44,6 +45,7 @@ import { loadApplicantProfile, saveApplicantProfile, type ApplicantProfile } fro
 import { optimizeDocumentImage, type SmartScanEnhancement } from './scan/imageOptimizer';
 import { createMultiPageDocument, shouldBundleSelection } from './scan/multiPageDocument';
 import DocumentScanEditor from './scan/DocumentScanEditor';
+import { findDocumentCorners, isSafeAutomaticCrop, type DocumentCornerDetectionMeta } from './scan/documentPerspective';
 import {
   listApplicationDrafts,
   loadApplicationDraft,
@@ -485,10 +487,12 @@ function App() {
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
   const [cameraCapturePhase, setCameraCapturePhase] = useState<'stabilizing' | 'selecting'>('stabilizing');
+  const [cameraLiveGuideStatus, setCameraLiveGuideStatus] = useState<LiveCameraGuideStatus>('positioning');
   const [cameraError, setCameraError] = useState('');
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraGuideRef = useRef<HTMLDivElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraAutoCaptureTriggeredRef = useRef(false);
   const [watermark, setWatermark] = useState(() => rentalWatermark(address));
   const [watermarkCustomized, setWatermarkCustomized] = useState(false);
   const [includeCover, setIncludeCover] = useState(true);
@@ -600,6 +604,77 @@ function App() {
       stopCameraStream();
     };
   }, [cameraTarget, cameraFacing]);
+  useEffect(() => {
+    if (!cameraTarget || cameraStatus !== 'ready' || cameraFacing !== 'environment') return;
+
+    let cancelled = false;
+    let timer = 0;
+    let previousFrame: Uint8ClampedArray | null = null;
+    let stableFrames = 0;
+    cameraAutoCaptureTriggeredRef.current = false;
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
+    if (!context) return;
+
+    const assessLiveFrame = () => {
+      if (cancelled || cameraAutoCaptureTriggeredRef.current) return;
+      const video = cameraVideoRef.current;
+      const guide = cameraGuideRef.current;
+      if (!video || !guide || !video.videoWidth || !video.videoHeight) {
+        timer = window.setTimeout(assessLiveFrame, 240);
+        return;
+      }
+
+      const videoRect = video.getBoundingClientRect();
+      const guideRect = guide.getBoundingClientRect();
+      const crop = calculateCameraCrop(
+        { width: video.videoWidth, height: video.videoHeight },
+        { left: videoRect.left, top: videoRect.top, width: videoRect.width, height: videoRect.height },
+        { left: guideRect.left, top: guideRect.top, width: guideRect.width, height: guideRect.height },
+        false,
+      );
+      const scale = Math.min(1, 220 / Math.max(crop.width, crop.height));
+      canvas.width = Math.max(3, Math.round(crop.width * scale));
+      canvas.height = Math.max(3, Math.round(crop.height * scale));
+      context.drawImage(
+        video,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
+      const frame = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const metadata: DocumentCornerDetectionMeta = { source: 'bounds-fallback' };
+      const corners = findDocumentCorners(frame, canvas.width, canvas.height, metadata);
+      const documentDetected = metadata.source === 'line-detection' && isSafeAutomaticCrop(corners);
+      const movement = previousFrame
+        ? measureFrameMovement(previousFrame, frame, canvas.width, canvas.height)
+        : Number.POSITIVE_INFINITY;
+      const assessment = nextLiveCameraAssessment({ documentDetected, movement, stableFrames });
+      stableFrames = assessment.stableFrames;
+      previousFrame = new Uint8ClampedArray(frame);
+      setCameraLiveGuideStatus(assessment.status);
+
+      if (assessment.shouldCapture) {
+        cameraAutoCaptureTriggeredRef.current = true;
+        void captureDocumentPhoto();
+        return;
+      }
+      timer = window.setTimeout(assessLiveFrame, 240);
+    };
+
+    setCameraLiveGuideStatus('positioning');
+    timer = window.setTimeout(assessLiveFrame, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [cameraTarget, cameraStatus, cameraFacing]);
   useEffect(() => () => {
     if (applicantPhoto) URL.revokeObjectURL(applicantPhoto.url);
   }, [applicantPhoto]);
@@ -911,6 +986,8 @@ function App() {
     setCameraFacing('environment');
     setCameraError('');
     setCameraStatus('loading');
+    setCameraLiveGuideStatus('positioning');
+    cameraAutoCaptureTriggeredRef.current = false;
     setCameraTarget({ slot, targetDocumentId });
   }
 
@@ -2324,14 +2401,18 @@ function App() {
           />
 
           {cameraStatus !== 'error' && (
-            <div className="documentGuide" aria-hidden="true">
+            <div className={`documentGuide ${cameraLiveGuideStatus}`} aria-live="polite">
               <div ref={cameraGuideRef} className="documentGuideFrame">
                 <i className="topLeft" />
                 <i className="topRight" />
                 <i className="bottomLeft" />
                 <i className="bottomRight" />
               </div>
-              <span>Alle vier Dokumentecken innerhalb des Rahmens ausrichten</span>
+              <span>{cameraLiveGuideStatus === 'positioning'
+                ? 'Dokument vollständig in den Rahmen legen'
+                : cameraLiveGuideStatus === 'moving'
+                  ? 'Dokument erkannt – kurz ruhig halten'
+                  : 'Dokument bereit – Aufnahme startet'}</span>
             </div>
           )}
 

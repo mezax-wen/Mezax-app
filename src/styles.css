@@ -181,6 +181,11 @@ header{background:#fff}
 .documentGuideFrame .bottomLeft{left:-3px;bottom:-3px;border-width:0 0 4px 4px;border-radius:0 0 0 9px}
 .documentGuideFrame .bottomRight{right:-3px;bottom:-3px;border-width:0 4px 4px 0;border-radius:0 0 9px}
 .documentGuide>span{position:absolute;left:18px;right:18px;top:15px;z-index:2;margin:auto;width:max-content;max-width:calc(100% - 36px);padding:7px 10px;border-radius:999px;background:#001014bf;color:#eafbf7;font-size:10px;font-weight:800;text-align:center}
+.documentGuide.moving .documentGuideFrame i{border-color:#f6b94a}
+.documentGuide.moving>span{background:#4b310de8;color:#ffe3a6}
+.documentGuide.ready .documentGuideFrame{border-color:#34e3b7;box-shadow:0 0 0 999px #0004,0 0 0 3px #34e3b744}
+.documentGuide.ready .documentGuideFrame i{border-color:#34e3b7}
+.documentGuide.ready>span{background:#073d31ed;color:#adffe9}
 .cameraLiveLoading{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#02090dcc;color:#eef8fa}
 .cameraLiveLoading svg{width:30px;color:#31d8ac}
 .cameraPermissionError{position:absolute;inset:0;z-index:6;padding:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:#07131a;color:#edf7fa}

@@ -1,4 +1,4 @@
-import { calculateCameraCrop } from './cameraCrop.ts';
+import { calculateCameraCrop, fitCameraCaptureSize } from './cameraCrop.ts';
 
 const closeTo = (actual: number, expected: number, label: string) => {
   if (Math.abs(actual - expected) > 0.01) {
@@ -30,3 +30,10 @@ closeTo(mirroredCrop.width, 600, 'Gespiegelt Breite');
 closeTo(mirroredCrop.height, 800, 'Gespiegelt Höhe');
 
 console.info('Kamera-Zuschnitt: sichtbarer Dokumentrahmen wird korrekt auf Kamerapixel abgebildet.');
+const nativePhotoSize = fitCameraCaptureSize({ width: 3024, height: 4032 });
+closeTo(nativePhotoSize.width, 3024, 'Native Fotobreite');
+closeTo(nativePhotoSize.height, 4032, 'Native Fotohöhe');
+
+const oversizedCapture = fitCameraCaptureSize({ width: 4000, height: 6000 });
+closeTo(oversizedCapture.width, 2731, 'Begrenzte Fotobreite');
+closeTo(oversizedCapture.height, 4096, 'Begrenzte Fotohöhe');

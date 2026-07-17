@@ -303,11 +303,34 @@ export function previewFilter(filter: ScanFilter) {
   return 'none';
 }
 
+function sharpenDocumentText(context: CanvasRenderingContext2D, width: number, height: number) {
+  const imageData = context.getImageData(0, 0, width, height);
+  const source = new Uint8ClampedArray(imageData.data);
+  const output = imageData.data;
+  const amount = 0.18;
+  const rowStride = width * 4;
+
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = y * rowStride + x * 4;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const center = source[index + channel];
+        const neighbours = source[index - 4 + channel]
+          + source[index + 4 + channel]
+          + source[index - rowStride + channel]
+          + source[index + rowStride + channel];
+        output[index + channel] = Math.max(0, Math.min(255, center * (1 + 4 * amount) - neighbours * amount));
+      }
+    }
+  }
+  context.putImageData(imageData, 0, 0);
+}
+
 export async function renderDocumentScan(
   url: string,
   corners: DocumentCorners,
   filter: ScanFilter,
-  maxDimension = 2200,
+  maxDimension = 3400,
 ) {
   if (!isValidDocumentCorners(corners)) {
     throw new Error('Die markierten Dokumentecken sind ungültig. Bitte ordne die vier Punkte neu an.');
@@ -333,8 +356,10 @@ export async function renderDocumentScan(
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
-  const context = canvas.getContext('2d', { alpha: false, willReadFrequently: filter === 'blackwhite' });
+  const context = canvas.getContext('2d', { alpha: false, willReadFrequently: filter !== 'original' });
   if (!context) throw new Error('Die lokale Scanverarbeitung ist auf diesem Gerät nicht verfügbar.');
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, width, height);
   const filterValue = previewFilter(filter);
@@ -350,6 +375,8 @@ export async function renderDocumentScan(
       imageData.data[index + 2] = value;
     }
     context.putImageData(imageData, 0, 0);
+  } else if (filter === 'color' || filter === 'grayscale') {
+    sharpenDocumentText(context, width, height);
   }
   return canvas;
 }
@@ -362,7 +389,7 @@ export async function createScannedDocumentFile(
 ) {
   const canvas = await renderDocumentScan(url, corners, filter);
   const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Der Scan konnte nicht gespeichert werden.')), 'image/jpeg', 0.94);
+    canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Der Scan konnte nicht gespeichert werden.')), 'image/jpeg', 0.99);
   });
   const baseName = originalName.replace(/\.[^.]+$/, '').slice(0, 60) || 'mezax-dokument';
   return new File([blob], `${baseName}-scan.jpg`, { type: 'image/jpeg', lastModified: Date.now() });

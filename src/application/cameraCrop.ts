@@ -53,3 +53,14 @@ export function calculateCameraCrop(
     height: cropHeight,
   };
 }
+export function fitCameraCaptureSize(
+  crop: Pick<CameraCrop, 'width' | 'height'>,
+  maxDimension = 4096,
+): CameraSize {
+  const safeMaximum = Math.max(1, maxDimension);
+  const scale = Math.min(1, safeMaximum / Math.max(crop.width, crop.height));
+  return {
+    width: Math.max(1, Math.round(crop.width * scale)),
+    height: Math.max(1, Math.round(crop.height * scale)),
+  };
+}

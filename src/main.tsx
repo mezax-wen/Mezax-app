@@ -508,6 +508,7 @@ function App() {
   const [cameraTarget, setCameraTarget] = useState<CameraTarget | null>(null);
   const [cameraScanSession, setCameraScanSession] = useState<CameraScanSession | null>(null);
   const [cameraSessionReviewOpen, setCameraSessionReviewOpen] = useState(false);
+  const [cameraSessionPreviewPageId, setCameraSessionPreviewPageId] = useState<string | null>(null);
   const [cameraSessionSaving, setCameraSessionSaving] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
@@ -1024,6 +1025,7 @@ function App() {
       return null;
     });
     setCameraSessionReviewOpen(false);
+    setCameraSessionPreviewPageId(null);
     setCameraSessionSaving(false);
   }
 
@@ -1309,6 +1311,7 @@ function App() {
   }
 
   function deleteCameraScanPage(id: string) {
+    setCameraSessionPreviewPageId((previewId) => previewId === id ? null : previewId);
     setCameraScanSession((current) => {
       if (!current) return current;
       const page = current.pages.find((item) => item.id === id);
@@ -2632,10 +2635,11 @@ function App() {
             <div className="cameraSessionPages">
               {session.pages.map((page, index) => (
                 <article className="cameraSessionPage" key={page.id}>
-                  <div className="cameraSessionThumbnail">
+                  <button className="cameraSessionThumbnail" type="button" onClick={() => setCameraSessionPreviewPageId(page.id)} aria-label={'Seite ' + (index + 1) + ' gross ansehen'}>
                     <img src={page.url} alt={'Vorschau Seite ' + (index + 1)} />
                     <strong>{index + 1}</strong>
-                  </div>
+                    <span className="cameraSessionZoom"><ScanSearch /> Ansehen</span>
+                  </button>
                   <div className="cameraSessionPageMeta">
                     <b>Seite {index + 1}</b>
                     <small>{page.file.name}</small>
@@ -2662,6 +2666,32 @@ function App() {
             </button>
           </div>
         </footer>
+      </div>
+    );
+  };
+
+  const CameraSessionPagePreview = () => {
+    const session = cameraScanSession;
+    if (!cameraSessionReviewOpen || !session || !cameraSessionPreviewPageId) return null;
+    const pageIndex = session.pages.findIndex((page) => page.id === cameraSessionPreviewPageId);
+    const page = session.pages[pageIndex];
+    if (!page) return null;
+
+    return (
+      <div className="cameraSessionPagePreview" role="dialog" aria-modal="true" aria-label={'Vorschau Seite ' + (pageIndex + 1)}>
+        <header className="cameraSessionPagePreviewTop">
+          <button className="icon" type="button" onClick={() => setCameraSessionPreviewPageId(null)} aria-label="Vorschau schliessen"><X /></button>
+          <span>
+            <b>Seite {pageIndex + 1} kontrollieren</b>
+            <small>{page.file.name}</small>
+          </span>
+        </header>
+        <div className="cameraSessionPagePreviewBody">
+          <img src={page.url} alt={'Grosse Vorschau Seite ' + (pageIndex + 1)} />
+        </div>
+        <button className="cameraSessionPagePreviewClose" type="button" onClick={() => setCameraSessionPreviewPageId(null)}>
+          <Check /> Zur Reihenfolge
+        </button>
       </div>
     );
   };
@@ -3016,6 +3046,7 @@ function App() {
         {DocumentCamera()}
         {CameraCaptureReview()}
         {CameraSessionReview()}
+        {CameraSessionPagePreview()}
       </main>
     );
   }

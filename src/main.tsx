@@ -3014,8 +3014,8 @@ function App() {
         <footer><button className="primary" disabled={!docs.length} onClick={() => setScreen('check')}>Zur Prüfung <ChevronRight /></button></footer>
         <Preview />
         {DocumentCamera()}
-        <CameraCaptureReview />
-        <CameraSessionReview />
+        {CameraCaptureReview()}
+        {CameraSessionReview()}
       </main>
     );
   }

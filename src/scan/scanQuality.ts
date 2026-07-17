@@ -17,11 +17,45 @@ export type ScanQualityResult = {
 };
 
 const luminance = (red: number, green: number, blue: number) => red * 0.299 + green * 0.587 + blue * 0.114;
+const pointDistance = (
+  first: { x: number; y: number },
+  second: { x: number; y: number },
+) => Math.hypot(first.x - second.x, first.y - second.y);
+
+function strongestTextEdges(values: Float32Array, gridWidth: number, gridHeight: number) {
+  const responses: number[] = [];
+  let detailedPixels = 0;
+
+  for (let y = 1; y < gridHeight - 1; y += 1) {
+    for (let x = 1; x < gridWidth - 1; x += 1) {
+      const index = y * gridWidth + x;
+      const center = values[index];
+      const response = Math.abs(
+        4 * center
+        - values[index - 1]
+        - values[index + 1]
+        - values[index - gridWidth]
+        - values[index + gridWidth],
+      );
+      responses.push(response);
+      if (response >= 12) detailedPixels += 1;
+    }
+  }
+
+  if (!responses.length) return { strength: 0, coverage: 0 };
+  responses.sort((first, second) => second - first);
+  const strongestCount = Math.max(1, Math.ceil(responses.length * 0.1));
+  const strength = responses
+    .slice(0, strongestCount)
+    .reduce((sum, response) => sum + response, 0) / strongestCount;
+  return { strength, coverage: detailedPixels / responses.length };
+}
 
 export function measureScanQuality(
   pixels: Uint8ClampedArray,
   width: number,
   height: number,
+  sourceShortEdge = Math.min(width, height),
 ): ScanQualityResult {
   if (!width || !height || pixels.length < width * height * 4) {
     return {
@@ -33,53 +67,38 @@ export function measureScanQuality(
   }
 
   const step = Math.max(1, Math.round(Math.min(width, height) / 420));
+  const gridWidth = Math.ceil(width / step);
+  const gridHeight = Math.ceil(height / step);
+  const values = new Float32Array(gridWidth * gridHeight);
   let count = 0;
   let sum = 0;
   let sumSquares = 0;
-  let edgeTotal = 0;
-  let edgeCount = 0;
-  let previousRow = new Float32Array(Math.ceil(width / step));
 
-  for (let y = 0; y < height; y += step) {
-    let previous = -1;
-    let column = 0;
-    const currentRow = new Float32Array(previousRow.length);
-    for (let x = 0; x < width; x += step) {
+  for (let y = 0, gridY = 0; y < height; y += step, gridY += 1) {
+    for (let x = 0, gridX = 0; x < width; x += step, gridX += 1) {
       const index = (y * width + x) * 4;
       const value = luminance(pixels[index], pixels[index + 1], pixels[index + 2]);
-      currentRow[column] = value;
+      values[gridY * gridWidth + gridX] = value;
       sum += value;
       sumSquares += value * value;
       count += 1;
-      if (previous >= 0) {
-        edgeTotal += Math.abs(value - previous);
-        edgeCount += 1;
-      }
-      if (y > 0) {
-        edgeTotal += Math.abs(value - previousRow[column]);
-        edgeCount += 1;
-      }
-      previous = value;
-      column += 1;
     }
-    previousRow = currentRow;
   }
 
   const average = sum / Math.max(1, count);
   const contrast = Math.sqrt(Math.max(0, sumSquares / Math.max(1, count) - average * average));
-  const sharpness = edgeTotal / Math.max(1, edgeCount);
-  const shortEdge = Math.min(width, height);
+  const detail = strongestTextEdges(values, gridWidth, gridHeight);
   let score = 100;
 
   const metrics: ScanQualityMetric[] = [];
-  if (sharpness < 5.5) {
-    score -= 36;
-    metrics.push({ id: 'sharpness', label: 'Schärfe', status: 'poor', message: 'Dokument wirkt unscharf' });
-  } else if (sharpness < 10) {
-    score -= 15;
-    metrics.push({ id: 'sharpness', label: 'Schärfe', status: 'check', message: 'Text bitte kurz prüfen' });
+  if (detail.strength < 14 || detail.coverage < 0.003) {
+    score -= 32;
+    metrics.push({ id: 'sharpness', label: 'Schärfe', status: 'poor', message: 'Zu wenig klare Textkanten erkannt' });
+  } else if (detail.strength < 28 || detail.coverage < 0.012) {
+    score -= 12;
+    metrics.push({ id: 'sharpness', label: 'Schärfe', status: 'check', message: 'Kleine Schrift bitte kurz prüfen' });
   } else {
-    metrics.push({ id: 'sharpness', label: 'Schärfe', status: 'good', message: 'Text wirkt klar' });
+    metrics.push({ id: 'sharpness', label: 'Schärfe', status: 'good', message: 'Textkanten wirken klar' });
   }
 
   if (average < 62) {
@@ -102,10 +121,10 @@ export function measureScanQuality(
     metrics.push({ id: 'contrast', label: 'Kontrast', status: 'good', message: 'Dokument gut lesbar' });
   }
 
-  if (shortEdge < 620) {
+  if (sourceShortEdge < 620) {
     score -= 32;
     metrics.push({ id: 'resolution', label: 'Auflösung', status: 'poor', message: 'Zu wenig Bilddetails' });
-  } else if (shortEdge < 900) {
+  } else if (sourceShortEdge < 900) {
     score -= 12;
     metrics.push({ id: 'resolution', label: 'Auflösung', status: 'check', message: 'Für kleine Schrift knapp' });
   } else {
@@ -121,10 +140,41 @@ export function measureScanQuality(
     metrics,
   };
 }
+
+function loadSourceShortEdge(url: string, corners: DocumentCorners) {
+  return new Promise<number>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const toPixels = (point: { x: number; y: number }) => ({
+        x: point.x * image.naturalWidth,
+        y: point.y * image.naturalHeight,
+      });
+      const topLeft = toPixels(corners.topLeft);
+      const topRight = toPixels(corners.topRight);
+      const bottomRight = toPixels(corners.bottomRight);
+      const bottomLeft = toPixels(corners.bottomLeft);
+      const scanWidth = Math.max(
+        pointDistance(topLeft, topRight),
+        pointDistance(bottomLeft, bottomRight),
+      );
+      const scanHeight = Math.max(
+        pointDistance(topLeft, bottomLeft),
+        pointDistance(topRight, bottomRight),
+      );
+      resolve(Math.min(scanWidth, scanHeight));
+    };
+    image.onerror = () => reject(new Error('Die Originalauflösung des Dokumentfotos konnte nicht gelesen werden.'));
+    image.src = url;
+  });
+}
+
 export async function analyzeDocumentScanQuality(url: string, corners: DocumentCorners) {
-  const canvas = await renderDocumentScan(url, corners, 'original', 900);
+  const [canvas, sourceShortEdge] = await Promise.all([
+    renderDocumentScan(url, corners, 'original', 900),
+    loadSourceShortEdge(url, corners),
+  ]);
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) throw new Error('Die lokale Qualitätsprüfung ist auf diesem Gerät nicht verfügbar.');
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-  return measureScanQuality(imageData.data, canvas.width, canvas.height);
+  return measureScanQuality(imageData.data, canvas.width, canvas.height, sourceShortEdge);
 }

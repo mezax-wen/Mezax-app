@@ -49,7 +49,7 @@ import { optimizeDocumentImage, type SmartScanEnhancement } from './scan/imageOp
 import { createMultiPageDocument, shouldBundleSelection } from './scan/multiPageDocument';
 import DocumentScanEditor from './scan/DocumentScanEditor';
 import { findDocumentCorners, isSafeAutomaticCrop, type DocumentCornerDetectionMeta } from './scan/documentPerspective';
-import { moveScanPage, removeScanPage } from './scan/scanSession';
+import { moveScanPage, removeScanPage, replaceScanPage } from './scan/scanSession';
 import {
   listApplicationDrafts,
   loadApplicationDraft,
@@ -151,11 +151,13 @@ type PendingCameraCapture = {
   url: string;
   slot?: RequiredDocument;
   targetDocumentId?: number;
+  replacePageId?: string;
 };
 
 type CameraTarget = {
   slot?: RequiredDocument;
   targetDocumentId?: number;
+  replacePageId?: string;
 };
 
 type CameraScanPage = {
@@ -1029,7 +1031,7 @@ function App() {
     setCameraSessionSaving(false);
   }
 
-  function openDocumentCamera(slot?: RequiredDocument, targetDocumentId?: number, keepSession = false) {
+  function openDocumentCamera(slot?: RequiredDocument, targetDocumentId?: number, keepSession = false, replacePageId?: string) {
     if (!keepSession) {
       clearCameraScanSession();
       setCameraScanSession({ slot, targetDocumentId, pages: [] });
@@ -1040,10 +1042,21 @@ function App() {
     setCameraStatus('loading');
     setCameraLiveGuideStatus('positioning');
     cameraAutoCaptureTriggeredRef.current = false;
-    setCameraTarget({ slot, targetDocumentId });
+    setCameraTarget({ slot, targetDocumentId, replacePageId });
   }
 
   function closeDocumentCamera(preserveSession = false) {
+    if (!preserveSession && cameraTarget?.replacePageId) {
+      const replacePageId = cameraTarget.replacePageId;
+      stopCameraStream();
+      setCameraTarget(null);
+      setCameraStatus('idle');
+      setCameraError('');
+      setCameraSessionReviewOpen(true);
+      setCameraSessionPreviewPageId(replacePageId);
+      return true;
+    }
+
     if (!preserveSession && cameraScanSession?.pages.length
       && !window.confirm(`${cameraScanSession.pages.length} bereits erfasste Seite(n) verwerfen?`)) return false;
     stopCameraStream();
@@ -1054,6 +1067,7 @@ function App() {
     return true;
   }
 
+
   function switchDocumentCamera() {
     if (cameraStatus === 'capturing') return;
     setCameraFacing((current) => current === 'environment' ? 'user' : 'environment');
@@ -1063,7 +1077,7 @@ function App() {
     const target = cameraTarget;
     if (!target) return;
     closeDocumentCamera(true);
-    stageCameraCapture(fileList, target.slot, target.targetDocumentId);
+    stageCameraCapture(fileList, target.slot, target.targetDocumentId, target.replacePageId);
   }
 
   async function captureDocumentPhoto() {
@@ -1209,6 +1223,7 @@ function App() {
           url: URL.createObjectURL(file),
           slot: target.slot,
           targetDocumentId: target.targetDocumentId,
+          replacePageId: target.replacePageId,
         };
       });
     }, 'image/jpeg', 0.99);
@@ -1218,10 +1233,10 @@ function App() {
     const capture = pendingCameraCapture;
     if (!capture) return;
     cancelCameraCapture(true);
-    openDocumentCamera(capture.slot, capture.targetDocumentId, true);
+    openDocumentCamera(capture.slot, capture.targetDocumentId, true, capture.replacePageId);
   }
 
-  function stageCameraCapture(fileList: FileList | null, slot?: RequiredDocument, targetDocumentId?: number) {
+  function stageCameraCapture(fileList: FileList | null, slot?: RequiredDocument, targetDocumentId?: number, replacePageId?: string) {
     const file = fileList?.[0];
     if (!file || !file.type.startsWith('image/')) return;
 
@@ -1232,6 +1247,7 @@ function App() {
         url: URL.createObjectURL(file),
         slot,
         targetDocumentId,
+        replacePageId,
       };
     });
   }
@@ -1249,6 +1265,10 @@ function App() {
   async function continueCameraCapture(processedFile?: File) {
     const capture = pendingCameraCapture;
     if (!capture) return;
+    if (capture.replacePageId) {
+      await confirmCameraCapture(processedFile);
+      return;
+    }
     const selectedFile = processedFile ?? capture.file;
     setCameraScanSession((current) => {
       const page = createCameraScanPage(selectedFile);
@@ -1275,6 +1295,23 @@ function App() {
     const sessionMatches = cameraScanSession?.slot === capture.slot
       && cameraScanSession?.targetDocumentId === capture.targetDocumentId;
     const storedPages = sessionMatches ? cameraScanSession.pages : [];
+
+    if (capture.replacePageId) {
+      const existingPage = storedPages.find((page) => page.id === capture.replacePageId);
+      if (!existingPage) throw new Error('Die zu ersetzende Seite wurde nicht mehr gefunden.');
+      const replacementPage = { ...createCameraScanPage(selectedFile), id: existingPage.id };
+      setCameraScanSession({
+        slot: capture.slot,
+        targetDocumentId: capture.targetDocumentId,
+        pages: replaceScanPage(storedPages, existingPage.id, replacementPage),
+      });
+      setPendingCameraCapture(null);
+      URL.revokeObjectURL(capture.url);
+      URL.revokeObjectURL(existingPage.url);
+      setCameraSessionPreviewPageId(null);
+      setCameraSessionReviewOpen(true);
+      return;
+    }
 
     if (storedPages.length) {
       const page = createCameraScanPage(selectedFile);
@@ -1315,9 +1352,18 @@ function App() {
     setCameraScanSession((current) => {
       if (!current) return current;
       const page = current.pages.find((item) => item.id === id);
+
       if (page) URL.revokeObjectURL(page.url);
       return { ...current, pages: removeScanPage(current.pages, id) };
     });
+  }
+
+  function retakeCameraScanPage(id: string) {
+    const session = cameraScanSession;
+    if (!session || cameraSessionSaving || !session.pages.some((page) => page.id === id)) return;
+    setCameraSessionPreviewPageId(null);
+    setCameraSessionReviewOpen(false);
+    openDocumentCamera(session.slot, session.targetDocumentId, true, id);
   }
 
   function continueCameraScanSession() {
@@ -2595,16 +2641,28 @@ function App() {
 
   const CameraCaptureReview = () => {
     if (!pendingCameraCapture) return null;
+    const replacementPageIndex = pendingCameraCapture.replacePageId
+      ? (cameraScanSession?.pages.findIndex((page) => page.id === pendingCameraCapture.replacePageId) ?? -1)
+      : -1;
     return (
       <DocumentScanEditor
         sourceUrl={pendingCameraCapture.url}
         sourceName={pendingCameraCapture.file.name}
         label={pendingCameraCapture.slot ?? 'Dokument'}
-        onCancel={() => cancelCameraCapture()}
+        onCancel={() => {
+          if (!pendingCameraCapture.replacePageId) {
+            cancelCameraCapture();
+            return;
+          }
+          const replacePageId = pendingCameraCapture.replacePageId;
+          cancelCameraCapture(true);
+          setCameraSessionReviewOpen(true);
+          setCameraSessionPreviewPageId(replacePageId);
+        }}
         onRetake={retakeDocumentPhoto}
-        pageCount={(cameraScanSession?.pages.length ?? 0) + 1}
+        pageCount={replacementPageIndex >= 0 ? replacementPageIndex + 1 : (cameraScanSession?.pages.length ?? 0) + 1}
         onUse={(file) => confirmCameraCapture(file)}
-        onUseAndContinue={(file) => continueCameraCapture(file)}
+        onUseAndContinue={pendingCameraCapture.replacePageId ? undefined : (file) => continueCameraCapture(file)}
       />
     );
   };
@@ -2689,9 +2747,14 @@ function App() {
         <div className="cameraSessionPagePreviewBody">
           <img src={page.url} alt={'Grosse Vorschau Seite ' + (pageIndex + 1)} />
         </div>
-        <button className="cameraSessionPagePreviewClose" type="button" onClick={() => setCameraSessionPreviewPageId(null)}>
-          <Check /> Zur Reihenfolge
-        </button>
+        <div className="cameraSessionPagePreviewActions">
+          <button className="secondary" type="button" onClick={() => retakeCameraScanPage(page.id)}>
+            <Camera /> Neu fotografieren
+          </button>
+          <button className="primary" type="button" onClick={() => setCameraSessionPreviewPageId(null)}>
+            <Check /> Zur Reihenfolge
+          </button>
+        </div>
       </div>
     );
   };

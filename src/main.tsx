@@ -35,7 +35,7 @@ import { calculateRentalPrivacyScore, getRentalPrivacyRecommendation } from './a
 import { assignAndSortFolderDocument, canAssignFolderDocumentSlot, folderCompleteness, rentalWatermark, requiredDocumentOrder, safeFolderFileName, slotAllowsMultipleDocuments, sortFolderDocuments, type RequiredDocument } from './application/folderPlan';
 import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
-import { calculateCameraCrop } from './application/cameraCrop';
+import { calculateCameraCrop, fitCameraCaptureSize } from './application/cameraCrop';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
@@ -534,11 +534,29 @@ function App() {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: cameraFacing },
-            width: { ideal: 1920 },
-            height: { ideal: 2560 },
+            width: { ideal: 3840 },
+            height: { ideal: 3840 },
+            aspectRatio: { ideal: 210 / 297 },
+            frameRate: { ideal: 30, max: 30 },
           },
           audio: false,
         });
+
+        const track = stream.getVideoTracks()[0];
+        try {
+          const capabilities = track?.getCapabilities?.();
+          const maximumWidth = capabilities?.width?.max;
+          const maximumHeight = capabilities?.height?.max;
+          if (maximumWidth && maximumHeight) {
+            await track.applyConstraints({
+              width: { ideal: maximumWidth },
+              height: { ideal: maximumHeight },
+            });
+          }
+        } catch {
+          // Manche iOS-Versionen melden Maximalwerte, akzeptieren sie aber nicht als Kombination.
+          // Der bereits geöffnete Stream bleibt dann mit der bestmöglichen Auflösung aktiv.
+        }
 
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
@@ -922,11 +940,10 @@ function App() {
         cameraFacing === 'user',
       )
       : { x: 0, y: 0, width: video.videoWidth, height: video.videoHeight };
-    const maxDimension = 2600;
-    const scale = Math.min(1, maxDimension / Math.max(crop.width, crop.height));
+    const captureSize = fitCameraCaptureSize(crop);
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(crop.width * scale));
-    canvas.height = Math.max(1, Math.round(crop.height * scale));
+    canvas.width = captureSize.width;
+    canvas.height = captureSize.height;
     const context = canvas.getContext('2d', { alpha: false });
     if (!context) {
       setCameraStatus('ready');
@@ -934,6 +951,8 @@ function App() {
       return;
     }
 
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
     context.drawImage(
       video,
       crop.x,
@@ -969,7 +988,7 @@ function App() {
           targetDocumentId: target.targetDocumentId,
         };
       });
-    }, 'image/jpeg', 0.94);
+    }, 'image/jpeg', 0.99);
   }
 
   function retakeDocumentPhoto() {
@@ -2247,6 +2266,14 @@ function App() {
 
         <div className="cameraLiveControls">
           <p>Halte das iPhone möglichst parallel zum Dokument und vermeide Schatten.</p>
+          <label className="cameraNativeQuality">
+            <Camera />
+            <span><b>Maximale iPhone-Qualität</b><small>Native Fotokamera · höchste Auflösung</small></span>
+            <input className="nativeFileInput" type="file" accept="image/*" capture="environment" onChange={(event) => {
+              stageSystemCameraCapture(event.currentTarget.files);
+              event.currentTarget.value = '';
+            }} />
+          </label>
           <div>
             <button className="cameraRoundAction" type="button" onClick={() => closeDocumentCamera()} aria-label="Kamera schließen">
               <X />

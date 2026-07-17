@@ -125,6 +125,28 @@ export function isSafeAutomaticCrop(corners: DocumentCorners) {
     && Math.min(leftHeight, rightHeight) >= 0.88;
 }
 
+export function isSafeDetectedPaperCrop(corners: DocumentCorners) {
+  if (!isValidDocumentCorners(corners)) return false;
+  const topWidth = distance(corners.topLeft, corners.topRight);
+  const bottomWidth = distance(corners.bottomLeft, corners.bottomRight);
+  const leftHeight = distance(corners.topLeft, corners.bottomLeft);
+  const rightHeight = distance(corners.topRight, corners.bottomRight);
+  const oppositeEdgesConsistent = Math.min(topWidth, bottomWidth) / Math.max(topWidth, bottomWidth) >= 0.62
+    && Math.min(leftHeight, rightHeight) / Math.max(leftHeight, rightHeight) >= 0.62;
+  const topAtFrameEdge = Math.max(corners.topLeft.y, corners.topRight.y) <= 0.04;
+  const bottomAtFrameEdge = Math.min(corners.bottomLeft.y, corners.bottomRight.y) >= 0.96;
+  const leftAtFrameEdge = Math.max(corners.topLeft.x, corners.bottomLeft.x) <= 0.04;
+  const rightAtFrameEdge = Math.min(corners.topRight.x, corners.bottomRight.x) >= 0.96;
+  const boundaryPairsConsistent = topAtFrameEdge === bottomAtFrameEdge
+    && leftAtFrameEdge === rightAtFrameEdge;
+
+  return polygonArea(corners) >= 0.42
+    && Math.min(topWidth, bottomWidth) >= 0.55
+    && Math.min(leftHeight, rightHeight) >= 0.55
+    && oppositeEdgesConsistent
+    && boundaryPairsConsistent;
+}
+
 export function findDocumentCorners(
   pixels: Uint8ClampedArray,
   width: number,
@@ -243,15 +265,15 @@ export async function analyzeDocumentCorners(url: string): Promise<DocumentCorne
   const data = context.getImageData(0, 0, canvas.width, canvas.height);
   const metadata: DocumentCornerDetectionMeta = { source: 'bounds-fallback' };
   const candidate = findDocumentCorners(data.data, canvas.width, canvas.height, metadata);
-  const automatic = metadata.source === 'line-detection' && isSafeAutomaticCrop(candidate);
+  const automatic = metadata.source === 'line-detection' && isSafeDetectedPaperCrop(candidate);
   return {
     corners: automatic ? candidate : SAFE_FULL_FRAME_CORNERS,
     width: image.naturalWidth,
     height: image.naturalHeight,
     automatic,
     message: automatic
-      ? 'Blattränder sicher erkannt.'
-      : 'Das Blatt wurde nicht sicher erkannt. Das vollständige Foto bleibt erhalten; bitte prüfe die Ecken.',
+      ? 'Papierkanten sicher erkannt. Tisch und Hintergrund werden entfernt.'
+      : 'Papierkanten nicht sicher erkannt. Bitte richte die vier Punkte in der Vorschau auf das Blatt aus.',
   };
 }
 

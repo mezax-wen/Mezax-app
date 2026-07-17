@@ -275,7 +275,7 @@ header{background:#fff}
 .cameraSessionReviewTop>span{display:grid;gap:2px;min-width:0}
 .cameraSessionReviewTop b{font-size:16px}
 .cameraSessionReviewTop small{overflow:hidden;color:#9db3bd;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
-.cameraSessionReviewBody{min-height:0;padding:14px;overflow-y:auto;overscroll-behavior:contain}
+.cameraSessionReviewBody{min-height:0;padding:14px;overflow-y:auto;overscroll-behavior:contain;overflow-anchor:none;-webkit-overflow-scrolling:touch}
 .cameraSessionIntro{display:flex;align-items:flex-start;gap:10px;margin-bottom:13px;padding:11px;border:1px solid #236f62;border-radius:12px;background:#0d2d2d}
 .cameraSessionIntro>svg{width:22px;height:22px;flex:0 0 auto;color:#42dfb7}
 .cameraSessionIntro>span{display:grid;gap:2px}

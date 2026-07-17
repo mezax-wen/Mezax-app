@@ -19,8 +19,15 @@ const sharpDocument = createPixels(1000, 1200, (x, y) => ((x % 28 < 5 || y % 74 
 const sharpResult = measureScanQuality(sharpDocument, 1000, 1200);
 if (sharpResult.level !== 'good') throw new Error(`Scharfer Scan sollte gut sein, erhalten: ${sharpResult.level}`);
 
+const uncertainFramingResult = measureScanQuality(sharpDocument, 1000, 1200, 1000, false);
+if (uncertainFramingResult.level !== 'check'
+  || !uncertainFramingResult.metrics.some((metric) => metric.id === 'framing' && metric.status === 'check')) {
+  throw new Error('Unsicher erkannte Blattränder müssen eine verständliche Vollständigkeitsprüfung auslösen.');
+}
+
 const darkDocument = createPixels(1000, 1200, (x) => (x % 80 < 3 ? 24 : 48));
 const darkResult = measureScanQuality(darkDocument, 1000, 1200);
+if (darkResult.level !== 'retry') throw new Error('Zu dunkle Dokumente müssen eine neue Aufnahme empfehlen.');
 if (!darkResult.metrics.some((metric) => metric.id === 'brightness' && metric.status === 'poor')) {
   throw new Error('Dunkle Dokumente müssen als zu dunkel erkannt werden.');
 }

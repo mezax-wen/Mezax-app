@@ -3,7 +3,7 @@ import { renderDocumentScan, type DocumentCorners } from './documentPerspective.
 export type ScanQualityLevel = 'good' | 'check' | 'retry';
 
 export type ScanQualityMetric = {
-  id: 'sharpness' | 'brightness' | 'contrast' | 'resolution';
+  id: 'framing' | 'sharpness' | 'brightness' | 'contrast' | 'resolution';
   label: string;
   status: 'good' | 'check' | 'poor';
   message: string;
@@ -56,6 +56,7 @@ export function measureScanQuality(
   width: number,
   height: number,
   sourceShortEdge = Math.min(width, height),
+  framingSafe = true,
 ): ScanQualityResult {
   if (!width || !height || pixels.length < width * height * 4) {
     return {
@@ -91,6 +92,13 @@ export function measureScanQuality(
   let score = 100;
 
   const metrics: ScanQualityMetric[] = [];
+  if (framingSafe) {
+    metrics.push({ id: 'framing', label: 'Blattränder', status: 'good', message: 'Alle vier Blattränder sicher erkannt' });
+  } else {
+    score -= 12;
+    metrics.push({ id: 'framing', label: 'Blattränder', status: 'check', message: 'Blattränder bitte in der Vorschau prüfen' });
+  }
+
   if (detail.strength < 14 || detail.coverage < 0.003) {
     score -= 32;
     metrics.push({ id: 'sharpness', label: 'Schärfe', status: 'poor', message: 'Zu wenig klare Textkanten erkannt' });
@@ -132,11 +140,15 @@ export function measureScanQuality(
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
-  const level: ScanQualityLevel = score >= 80 ? 'good' : score >= 58 ? 'check' : 'retry';
+  const hasPoorMetric = metrics.some((metric) => metric.status === 'poor');
+  const hasCheckMetric = metrics.some((metric) => metric.status === 'check');
+  const level: ScanQualityLevel = score < 58 || hasPoorMetric
+    ? 'retry'
+    : score < 80 || hasCheckMetric ? 'check' : 'good';
   return {
     score,
     level,
-    title: level === 'good' ? 'Scanqualität: sehr gut' : level === 'check' ? 'Scanqualität bitte prüfen' : 'Neu fotografieren empfohlen',
+    title: level === 'good' ? 'Dokument vollständig und gut lesbar' : level === 'check' ? 'Aufnahme bitte prüfen' : 'Neu fotografieren empfohlen',
     metrics,
   };
 }
@@ -168,7 +180,7 @@ function loadSourceShortEdge(url: string, corners: DocumentCorners) {
   });
 }
 
-export async function analyzeDocumentScanQuality(url: string, corners: DocumentCorners) {
+export async function analyzeDocumentScanQuality(url: string, corners: DocumentCorners, framingSafe = true) {
   const [canvas, sourceShortEdge] = await Promise.all([
     renderDocumentScan(url, corners, 'original', 900),
     loadSourceShortEdge(url, corners),
@@ -176,5 +188,5 @@ export async function analyzeDocumentScanQuality(url: string, corners: DocumentC
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) throw new Error('Die lokale Qualitätsprüfung ist auf diesem Gerät nicht verfügbar.');
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-  return measureScanQuality(imageData.data, canvas.width, canvas.height, sourceShortEdge);
+  return measureScanQuality(imageData.data, canvas.width, canvas.height, sourceShortEdge, framingSafe);
 }

@@ -2779,15 +2779,18 @@ function App() {
             <b>Seite {pageIndex + 1} kontrollieren</b>
             <small>{page.file.name}</small>
           </span>
+          <button className="icon" type="button" disabled={cameraSessionRotatingPageId !== null} onClick={() => void rotateCameraScanPage(page.id)} aria-label={'Seite ' + (pageIndex + 1) + ' um 90 Grad drehen'}>
+            {cameraSessionRotatingPageId === page.id ? <LoaderCircle className="spin" /> : <RotateCw />}
+          </button>
         </header>
         <div className="cameraSessionPagePreviewBody">
           <img src={page.url} alt={'Grosse Vorschau Seite ' + (pageIndex + 1)} />
         </div>
         <div className="cameraSessionPagePreviewActions">
-          <button className="secondary" type="button" onClick={() => retakeCameraScanPage(page.id)}>
+          <button className="secondary" type="button" disabled={cameraSessionRotatingPageId !== null} onClick={() => retakeCameraScanPage(page.id)}>
             <Camera /> Neu fotografieren
           </button>
-          <button className="primary" type="button" onClick={() => setCameraSessionPreviewPageId(null)}>
+          <button className="primary" type="button" disabled={cameraSessionRotatingPageId !== null} onClick={() => setCameraSessionPreviewPageId(null)}>
             <Check /> Zur Reihenfolge
           </button>
         </div>

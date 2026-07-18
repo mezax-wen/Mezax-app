@@ -22,6 +22,7 @@ import {
   Images,
   Plus,
   RefreshCw,
+  RotateCw,
   ScanSearch,
   ShieldCheck,
   Upload,
@@ -50,6 +51,7 @@ import { createMultiPageDocument, shouldBundleSelection } from './scan/multiPage
 import DocumentScanEditor from './scan/DocumentScanEditor';
 import { findDocumentCorners, isSafeAutomaticCrop, type DocumentCornerDetectionMeta } from './scan/documentPerspective';
 import { moveScanPage, removeScanPage, replaceScanPage } from './scan/scanSession';
+import { rotateImageFileClockwise } from './scan/rotateImage';
 import {
   listApplicationDrafts,
   loadApplicationDraft,
@@ -512,6 +514,7 @@ function App() {
   const [cameraSessionReviewOpen, setCameraSessionReviewOpen] = useState(false);
   const [cameraSessionPreviewPageId, setCameraSessionPreviewPageId] = useState<string | null>(null);
   const [cameraSessionSaving, setCameraSessionSaving] = useState(false);
+  const [cameraSessionRotatingPageId, setCameraSessionRotatingPageId] = useState<string | null>(null);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
   const [cameraCapturePhase, setCameraCapturePhase] = useState<'stabilizing' | 'selecting'>('stabilizing');
@@ -1029,6 +1032,7 @@ function App() {
     setCameraSessionReviewOpen(false);
     setCameraSessionPreviewPageId(null);
     setCameraSessionSaving(false);
+    setCameraSessionRotatingPageId(null);
   }
 
   function openDocumentCamera(slot?: RequiredDocument, targetDocumentId?: number, keepSession = false, replacePageId?: string) {
@@ -1364,6 +1368,35 @@ function App() {
     setCameraSessionPreviewPageId(null);
     setCameraSessionReviewOpen(false);
     openDocumentCamera(session.slot, session.targetDocumentId, true, id);
+  }
+
+  async function rotateCameraScanPage(id: string) {
+    const page = cameraScanSession?.pages.find((item) => item.id === id);
+    if (!page || cameraSessionSaving || cameraSessionRotatingPageId) return;
+    setCameraSessionRotatingPageId(id);
+
+    try {
+      const rotatedFile = await rotateImageFileClockwise(page.file);
+      const rotatedPage = createCameraScanPage(rotatedFile);
+      setCameraScanSession((current) => {
+        const existingPage = current?.pages.find((item) => item.id === id);
+        if (!current || !existingPage) {
+          URL.revokeObjectURL(rotatedPage.url);
+          return current;
+        }
+
+        URL.revokeObjectURL(existingPage.url);
+        return {
+          ...current,
+          pages: replaceScanPage(current.pages, id, { ...rotatedPage, id }),
+        };
+      });
+      setUploadNotice('Die Scan-Seite wurde lokal um 90 Grad gedreht.');
+    } catch (error) {
+      setUploadNotice(error instanceof Error ? error.message : 'Die Scan-Seite konnte nicht gedreht werden.');
+    } finally {
+      setCameraSessionRotatingPageId(null);
+    }
   }
 
   function continueCameraScanSession() {
@@ -2704,6 +2737,9 @@ function App() {
                     <div>
                       <button type="button" disabled={index === 0 || cameraSessionSaving} onClick={() => moveCameraScanPage(index, -1)} aria-label={'Seite ' + (index + 1) + ' nach vorne'}><ArrowUp /></button>
                       <button type="button" disabled={index === session.pages.length - 1 || cameraSessionSaving} onClick={() => moveCameraScanPage(index, 1)} aria-label={'Seite ' + (index + 1) + ' nach hinten'}><ArrowDown /></button>
+                      <button type="button" disabled={cameraSessionSaving || cameraSessionRotatingPageId !== null} onClick={() => void rotateCameraScanPage(page.id)} aria-label={'Seite ' + (index + 1) + ' um 90 Grad drehen'}>
+                        {cameraSessionRotatingPageId === page.id ? <LoaderCircle className="spin" /> : <RotateCw />}
+                      </button>
                       <button className="danger" type="button" disabled={cameraSessionSaving} onClick={() => deleteCameraScanPage(page.id)} aria-label={'Seite ' + (index + 1) + ' löschen'}><Trash2 /></button>
                     </div>
                   </div>
@@ -2718,8 +2754,8 @@ function App() {
         <footer className="cameraSessionReviewActions">
           <p><ShieldCheck /> Deine Aufnahmen werden nur in diesem Browser verarbeitet.</p>
           <div>
-            <button className="secondary" type="button" disabled={cameraSessionSaving} onClick={continueCameraScanSession}><Plus /> Weitere Seite</button>
-            <button className="primary" type="button" disabled={!session.pages.length || cameraSessionSaving} onClick={() => void saveCameraScanSession()}>
+            <button className="secondary" type="button" disabled={cameraSessionSaving || cameraSessionRotatingPageId !== null} onClick={continueCameraScanSession}><Plus /> Weitere Seite</button>
+            <button className="primary" type="button" disabled={!session.pages.length || cameraSessionSaving || cameraSessionRotatingPageId !== null} onClick={() => void saveCameraScanSession()}>
               {cameraSessionSaving ? <><LoaderCircle className="spin" /> Wird erstellt .</> : <><Check /> Dokument speichern</>}
             </button>
           </div>

@@ -18,6 +18,7 @@ type DocumentScanEditorProps = {
   sourceUrl: string;
   sourceName: string;
   label: string;
+  initialCorners?: DocumentCorners;
   pageCount?: number;
   onCancel: () => void;
   onRetake: () => void;
@@ -43,6 +44,7 @@ export default function DocumentScanEditor({
   sourceUrl,
   sourceName,
   label,
+  initialCorners,
   pageCount = 1,
   onCancel,
   onRetake,
@@ -91,9 +93,14 @@ export default function DocumentScanEditor({
       .then((result) => {
         if (!active) return;
         setSourceSize({ width: result.width, height: result.height });
-        setCorners(result.corners);
-        setAnalysisStatus(result.automatic ? 'detected' : 'fallback');
-        setAnalysisMessage(result.message);
+        const liveCorners = initialCorners && isValidDocumentCorners(initialCorners)
+          ? initialCorners
+          : null;
+        setCorners(liveCorners ?? result.corners);
+        setAnalysisStatus(liveCorners || result.automatic ? 'detected' : 'fallback');
+        setAnalysisMessage(liveCorners
+          ? 'Papierkanten aus der automatischen Aufnahme übernommen.'
+          : result.message);
       })
       .catch((reason) => {
         if (!active) return;
@@ -106,7 +113,7 @@ export default function DocumentScanEditor({
     return () => {
       active = false;
     };
-  }, [sourceUrl]);
+  }, [sourceUrl, initialCorners]);
 
   useEffect(() => {
     const stage = stageRef.current;

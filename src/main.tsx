@@ -49,7 +49,7 @@ import { loadApplicantProfile, saveApplicantProfile, type ApplicantProfile } fro
 import { optimizeDocumentImage, type SmartScanEnhancement } from './scan/imageOptimizer';
 import { createMultiPageDocument, shouldBundleSelection } from './scan/multiPageDocument';
 import DocumentScanEditor from './scan/DocumentScanEditor';
-import { findDocumentCorners, isSafeAutomaticCrop, type DocumentCornerDetectionMeta } from './scan/documentPerspective';
+import { findDocumentCorners, isSafeAutomaticCrop, type DocumentCornerDetectionMeta, type DocumentCorners } from './scan/documentPerspective';
 import { moveScanPage, removeScanPage, replaceScanPage } from './scan/scanSession';
 import { rotateImageFileClockwise } from './scan/rotateImage';
 import {
@@ -154,6 +154,7 @@ type PendingCameraCapture = {
   slot?: RequiredDocument;
   targetDocumentId?: number;
   replacePageId?: string;
+  detectedCorners?: DocumentCorners;
 };
 
 type CameraTarget = {
@@ -534,6 +535,7 @@ function App() {
   const cameraGuideRef = useRef<HTMLDivElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraAutoCaptureTriggeredRef = useRef(false);
+  const cameraDetectedCornersRef = useRef<DocumentCorners | null>(null);
   const [watermark, setWatermark] = useState(() => rentalWatermark(address));
   const [watermarkCustomized, setWatermarkCustomized] = useState(false);
   const [includeCover, setIncludeCover] = useState(true);
@@ -654,6 +656,7 @@ function App() {
     let stableFrames = 0;
     let visualStableFrames = 0;
     cameraAutoCaptureTriggeredRef.current = false;
+    cameraDetectedCornersRef.current = null;
 
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
@@ -694,6 +697,7 @@ function App() {
       const metadata: DocumentCornerDetectionMeta = { source: 'bounds-fallback' };
       const corners = findDocumentCorners(frame, canvas.width, canvas.height, metadata);
       const documentDetected = metadata.source === 'line-detection' && isSafeAutomaticCrop(corners);
+      if (documentDetected) cameraDetectedCornersRef.current = corners;
       const movement = previousFrame
         ? measureFrameMovement(previousFrame, frame, canvas.width, canvas.height)
         : Number.POSITIVE_INFINITY;
@@ -1158,6 +1162,7 @@ function App() {
 
   async function captureDocumentPhoto() {
     const target = cameraTarget;
+    const detectedCorners = cameraDetectedCornersRef.current ?? undefined;
     const video = cameraVideoRef.current;
     if (!target || !video || !video.videoWidth || !video.videoHeight) {
       setCameraStatus('error');
@@ -1300,6 +1305,7 @@ function App() {
           slot: target.slot,
           targetDocumentId: target.targetDocumentId,
           replacePageId: target.replacePageId,
+          detectedCorners,
         };
       });
     }, 'image/jpeg', 0.99);
@@ -2785,6 +2791,7 @@ function App() {
         sourceUrl={pendingCameraCapture.url}
         sourceName={pendingCameraCapture.file.name}
         label={pendingCameraCapture.slot ?? 'Dokument'}
+        initialCorners={pendingCameraCapture.detectedCorners}
         onCancel={() => {
           if (!pendingCameraCapture.replacePageId) {
             cancelCameraCapture();

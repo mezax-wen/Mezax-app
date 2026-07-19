@@ -183,6 +183,37 @@ if (distractingMeta.source !== 'line-detection') {
 assertNear(distractingCorners.topLeft.x, 54 / distractingWidth, 'Ablenkungstest oben links x');
 assertNear(distractingCorners.topRight.x, 166 / distractingWidth, 'Ablenkungstest oben rechts x');
 assertNear(distractingCorners.bottomRight.y, 264 / distractingHeight, 'Ablenkungstest unten rechts y');
+
+const stackedWidth = 240;
+const stackedHeight = 300;
+const stackedPixels = new Uint8ClampedArray(stackedWidth * stackedHeight * 4);
+for (let y = 0; y < stackedHeight; y += 1) {
+  for (let x = 0; x < stackedWidth; x += 1) {
+    const index = (y * stackedWidth + x) * 4;
+    const insideUnderlay = x >= 20 && x <= 220 && y >= 20 && y <= 292;
+    const insideTopPage = x >= 45 && x <= 180 && y >= 36 && y <= 270;
+    const value = insideTopPage ? 244 : insideUnderlay ? 206 : 72;
+    stackedPixels[index] = value;
+    stackedPixels[index + 1] = value;
+    stackedPixels[index + 2] = value;
+    stackedPixels[index + 3] = 255;
+  }
+}
+const stackedMeta: DocumentCornerDetectionMeta = { source: 'bounds-fallback' };
+const stackedCorners = findDocumentCorners(stackedPixels, stackedWidth, stackedHeight, stackedMeta);
+if (stackedMeta.source !== 'line-detection') {
+  throw new Error('Das oberste Blatt eines Papierstapels muss erkannt werden.');
+}
+const assertTopPageNear = (actual: number, expected: number, label: string) => {
+  if (Math.abs(actual - expected) > 0.06) {
+    throw new Error(`${label}: oberstes Blatt erwartet, erhalten ${actual}`);
+  }
+};
+assertTopPageNear(stackedCorners.topLeft.x, 45 / stackedWidth, 'Stapeltest oben links x');
+assertTopPageNear(stackedCorners.topLeft.y, 36 / stackedHeight, 'Stapeltest oben links y');
+assertTopPageNear(stackedCorners.topRight.x, 180 / stackedWidth, 'Stapeltest oben rechts x');
+assertTopPageNear(stackedCorners.bottomRight.y, 270 / stackedHeight, 'Stapeltest unten rechts y');
+
 const consistentPaperWidth = 215;
 const consistentPaperHeight = 300;
 const consistentPaperPixels = new Uint8ClampedArray(consistentPaperWidth * consistentPaperHeight * 4);

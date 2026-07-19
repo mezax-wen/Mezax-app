@@ -283,6 +283,98 @@ function robustFitLine(points: PixelPoint[], independent: 'x' | 'y') {
   return fitLine(selected, independent);
 }
 
+function refineDetectedPaperEdges(
+  corners: DocumentCorners,
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  targetLight: number,
+) {
+  const points = [corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft]
+    .map((point) => ({ x: point.x * width, y: point.y * height }));
+  const center = points.reduce((sum, point) => ({
+    x: sum.x + point.x / 4,
+    y: sum.y + point.y / 4,
+  }), { x: 0, y: 0 });
+  const sampleLight = (x: number, y: number) => {
+    const safeX = Math.round(clamp(x, 0, width - 1));
+    const safeY = Math.round(clamp(y, 0, height - 1));
+    const index = (safeY * width + safeX) * 4;
+    return luminance(pixels[index], pixels[index + 1], pixels[index + 2]);
+  };
+  const sampleOffset = Math.max(2, Math.min(width, height) * 0.012);
+  const maximumShift = Math.min(width, height) * 0.18;
+  const shiftedEdges = points.map((start, index) => {
+    const end = points[(index + 1) % points.length];
+    const edgeX = end.x - start.x;
+    const edgeY = end.y - start.y;
+    const length = Math.max(0.001, Math.hypot(edgeX, edgeY));
+    let normalX = -edgeY / length;
+    let normalY = edgeX / length;
+    const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    if ((center.x - midpoint.x) * normalX + (center.y - midpoint.y) * normalY < 0) {
+      normalX *= -1;
+      normalY *= -1;
+    }
+    const scoreAt = (shift: number) => {
+      const contrasts: number[] = [];
+      const targetDistances: number[] = [];
+      for (let sampleIndex = 1; sampleIndex <= 11; sampleIndex += 1) {
+        const position = sampleIndex / 12;
+        const x = start.x + edgeX * position + normalX * shift;
+        const y = start.y + edgeY * position + normalY * shift;
+        const inside = sampleLight(x + normalX * sampleOffset, y + normalY * sampleOffset);
+        const outside = sampleLight(x - normalX * sampleOffset, y - normalY * sampleOffset);
+        contrasts.push(Math.max(-20, inside - outside));
+        targetDistances.push(Math.abs(inside - targetLight));
+      }
+      if (!contrasts.length) return Number.NEGATIVE_INFINITY;
+      return median(contrasts) * 0.12 - median(targetDistances);
+    };
+    const baseScore = scoreAt(0);
+    let bestShift = 0;
+    let bestScore = baseScore;
+    for (let shift = 2; shift <= maximumShift; shift += 2) {
+      const score = scoreAt(shift) - shift * 0.02;
+      if (score > bestScore) {
+        bestShift = shift;
+        bestScore = score;
+      }
+    }
+    if (bestShift < 3 || bestScore < baseScore + 5) bestShift = 0;
+    return {
+      start: { x: start.x + normalX * bestShift, y: start.y + normalY * bestShift },
+      end: { x: end.x + normalX * bestShift, y: end.y + normalY * bestShift },
+      improved: bestShift >= 3,
+      gain: bestShift >= 3 ? bestScore - baseScore : 0,
+    };
+  });
+  const topLine = fitLine([shiftedEdges[0].start, shiftedEdges[0].end], 'x');
+  const rightLine = fitLine([shiftedEdges[1].start, shiftedEdges[1].end], 'y');
+  const bottomLine = fitLine([shiftedEdges[2].start, shiftedEdges[2].end], 'x');
+  const leftLine = fitLine([shiftedEdges[3].start, shiftedEdges[3].end], 'y');
+  if (!topLine || !rightLine || !bottomLine || !leftLine) return corners;
+  const normalize = (point: PixelPoint): ScanPoint => ({
+    x: clamp(point.x / width),
+    y: clamp(point.y / height),
+  });
+  const refined: DocumentCorners = {
+    topLeft: normalize(intersectVerticalHorizontal(leftLine, topLine)),
+    topRight: normalize(intersectVerticalHorizontal(rightLine, topLine)),
+    bottomRight: normalize(intersectVerticalHorizontal(rightLine, bottomLine)),
+    bottomLeft: normalize(intersectVerticalHorizontal(leftLine, bottomLine)),
+  };
+  const areaRatio = polygonArea(refined) / Math.max(0.0001, polygonArea(corners));
+  const improvedEdges = shiftedEdges.filter((edge) => edge.improved).length;
+  const selectionGain = shiftedEdges.reduce((sum, edge) => sum + edge.gain, 0);
+  return areaRatio >= 0.52
+    && areaRatio <= 1.02
+    && improvedEdges >= 2
+    && selectionGain >= 10
+    && isSafeDetectedPaperCrop(refined)
+    ? refined
+    : corners;
+}
 function findCenterSeededPaperCorners(
   pixels: Uint8ClampedArray,
   width: number,
@@ -455,7 +547,8 @@ function findCenterSeededPaperCorners(
     bottomRight: normalize(intersectVerticalHorizontal(rightLine, bottomLine)),
     bottomLeft: normalize(intersectVerticalHorizontal(leftLine, bottomLine)),
   };
-  return isSafeDetectedPaperCrop(corners) ? corners : null;
+  const refined = refineDetectedPaperEdges(corners, pixels, width, height, targetLight);
+  return isSafeDetectedPaperCrop(refined) ? refined : null;
 }
 export function findDocumentCorners(
   pixels: Uint8ClampedArray,

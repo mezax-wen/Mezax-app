@@ -171,10 +171,14 @@ export function findDocumentCorners(
   samples.sort((a, b) => a - b);
   const dark = samples[Math.floor(samples.length * 0.12)] ?? 30;
   const light = samples[Math.floor(samples.length * 0.88)] ?? 220;
-  const threshold = dark + Math.max(18, (light - dark) * 0.3);
+  const threshold = dark + Math.max(24, (light - dark) * 0.58);
   const isPaper = (x: number, y: number) => {
     const index = (Math.round(y) * width + Math.round(x)) * 4;
-    return luminance(pixels[index], pixels[index + 1], pixels[index + 2]) >= threshold;
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    const chroma = Math.max(red, green, blue) - Math.min(red, green, blue);
+    return luminance(red, green, blue) >= threshold && chroma <= 68;
   };
 
   const leftPoints: PixelPoint[] = [];

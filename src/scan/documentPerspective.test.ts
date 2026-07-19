@@ -82,6 +82,26 @@ if (!isSafeDetectedPaperCrop(deceptiveLargeRegion)) {
   throw new Error('Nach dem Foto muss ein vollständiges Blatt mit sichtbarem Tischrand zugeschnitten werden.');
 }
 
+const smallerCompletePage = {
+  topLeft: { x: 0.19, y: 0.18 },
+  topRight: { x: 0.79, y: 0.11 },
+  bottomRight: { x: 0.80, y: 0.84 },
+  bottomLeft: { x: 0.22, y: 0.80 },
+};
+if (!isSafeDetectedPaperCrop(smallerCompletePage)) {
+  throw new Error('Ein vollständig erkanntes Blatt muss auch mit größerem Abstand zur Kamera übernommen werden.');
+}
+
+const almostEntireFrame = {
+  topLeft: { x: 0.01, y: 0.01 },
+  topRight: { x: 0.99, y: 0.01 },
+  bottomRight: { x: 0.99, y: 0.99 },
+  bottomLeft: { x: 0.01, y: 0.99 },
+};
+if (isSafeDetectedPaperCrop(almostEntireFrame)) {
+  throw new Error('Der fast vollständige Kamerarahmen darf nicht als sicher erkanntes Blatt gelten.');
+}
+
 const halfPageAtTopEdge = {
   topLeft: { x: 0.04, y: 0.02 },
   topRight: { x: 0.96, y: 0.02 },

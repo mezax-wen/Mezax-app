@@ -127,6 +127,7 @@ export function isSafeAutomaticCrop(corners: DocumentCorners) {
 
 export function isSafeDetectedPaperCrop(corners: DocumentCorners) {
   if (!isValidDocumentCorners(corners)) return false;
+  const area = polygonArea(corners);
   const topWidth = distance(corners.topLeft, corners.topRight);
   const bottomWidth = distance(corners.bottomLeft, corners.bottomRight);
   const leftHeight = distance(corners.topLeft, corners.bottomLeft);
@@ -140,9 +141,10 @@ export function isSafeDetectedPaperCrop(corners: DocumentCorners) {
   const boundaryPairsConsistent = topAtFrameEdge === bottomAtFrameEdge
     && leftAtFrameEdge === rightAtFrameEdge;
 
-  return polygonArea(corners) >= 0.42
-    && Math.min(topWidth, bottomWidth) >= 0.55
-    && Math.min(leftHeight, rightHeight) >= 0.55
+  return area >= 0.16
+    && area <= 0.93
+    && Math.min(topWidth, bottomWidth) >= 0.34
+    && Math.min(leftHeight, rightHeight) >= 0.38
     && oppositeEdgesConsistent
     && boundaryPairsConsistent;
 }
@@ -269,15 +271,18 @@ export async function analyzeDocumentCorners(url: string): Promise<DocumentCorne
   const data = context.getImageData(0, 0, canvas.width, canvas.height);
   const metadata: DocumentCornerDetectionMeta = { source: 'bounds-fallback' };
   const candidate = findDocumentCorners(data.data, canvas.width, canvas.height, metadata);
-  const automatic = metadata.source === 'line-detection' && isSafeDetectedPaperCrop(candidate);
+  const detected = metadata.source === 'line-detection' && isValidDocumentCorners(candidate);
+  const automatic = detected && isSafeDetectedPaperCrop(candidate);
   return {
-    corners: automatic ? candidate : SAFE_FULL_FRAME_CORNERS,
+    corners: detected ? candidate : SAFE_FULL_FRAME_CORNERS,
     width: image.naturalWidth,
     height: image.naturalHeight,
     automatic,
     message: automatic
       ? 'Papierkanten sicher erkannt. Tisch und Hintergrund werden entfernt.'
-      : 'Papierkanten nicht sicher erkannt. Bitte richte die vier Punkte in der Vorschau auf das Blatt aus.',
+      : detected
+        ? 'Papierkanten erkannt. Bitte prüfe kurz, ob die vier Punkte auf den Blattecken liegen.'
+        : 'Papierkanten nicht sicher erkannt. Bitte richte die vier Punkte in der Vorschau auf das Blatt aus.',
   };
 }
 

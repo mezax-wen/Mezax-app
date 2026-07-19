@@ -28,3 +28,8 @@ export function nextLiveCameraAssessment({
     shouldCapture: nextStableFrames >= captureFrames,
   };
 }
+
+export function liveCameraStabilityProgress(stableFrames: number, captureFrames = 4) {
+  if (!Number.isFinite(stableFrames) || !Number.isFinite(captureFrames) || captureFrames <= 0) return 0;
+  return Math.min(1, Math.max(0, stableFrames / captureFrames));
+}

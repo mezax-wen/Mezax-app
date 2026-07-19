@@ -41,7 +41,7 @@ import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, scaleDocumentBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { calculateCameraCrop, fitCameraCaptureSize } from './application/cameraCrop';
 import { measureFrameMovement, measureFrameSharpness } from './application/cameraFrameSelection';
-import { liveCameraStabilityProgress, nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
+import { liveCameraStabilityProgress, nextCameraStabilityFrames, nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
@@ -652,6 +652,7 @@ function App() {
     let timer = 0;
     let previousFrame: Uint8ClampedArray | null = null;
     let stableFrames = 0;
+    let visualStableFrames = 0;
     cameraAutoCaptureTriggeredRef.current = false;
 
     const canvas = document.createElement('canvas');
@@ -698,9 +699,10 @@ function App() {
         : Number.POSITIVE_INFINITY;
       const assessment = nextLiveCameraAssessment({ documentDetected, movement, stableFrames });
       stableFrames = assessment.stableFrames;
+      visualStableFrames = nextCameraStabilityFrames(movement, visualStableFrames);
       previousFrame = new Uint8ClampedArray(frame);
       setCameraLiveGuideStatus(assessment.status);
-      setCameraStabilityProgress(liveCameraStabilityProgress(assessment.stableFrames));
+      setCameraStabilityProgress(liveCameraStabilityProgress(visualStableFrames));
 
       if (assessment.shouldCapture) {
         cameraAutoCaptureTriggeredRef.current = true;

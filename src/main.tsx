@@ -515,6 +515,15 @@ function App() {
   const [cameraSessionPreviewPageId, setCameraSessionPreviewPageId] = useState<string | null>(null);
   const [cameraSessionSaving, setCameraSessionSaving] = useState(false);
   const [cameraSessionRotatingPageId, setCameraSessionRotatingPageId] = useState<string | null>(null);
+  const [deletedCameraScanPage, setDeletedCameraScanPage] = useState<{ page: CameraScanPage; index: number } | null>(null);
+  const deletedCameraScanPageRef = useRef<{ page: CameraScanPage; index: number } | null>(null);
+  const deletedCameraScanPageTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (deletedCameraScanPageTimerRef.current !== null) window.clearTimeout(deletedCameraScanPageTimerRef.current);
+    if (deletedCameraScanPageRef.current) URL.revokeObjectURL(deletedCameraScanPageRef.current.page.url);
+  }, []);
+
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
   const [cameraCapturePhase, setCameraCapturePhase] = useState<'stabilizing' | 'selecting'>('stabilizing');
@@ -1024,7 +1033,53 @@ function App() {
     };
   }
 
+  function finalizeDeletedCameraScanPage() {
+    if (deletedCameraScanPageTimerRef.current !== null) {
+      window.clearTimeout(deletedCameraScanPageTimerRef.current);
+      deletedCameraScanPageTimerRef.current = null;
+    }
+    const deleted = deletedCameraScanPageRef.current;
+    if (deleted) URL.revokeObjectURL(deleted.page.url);
+    deletedCameraScanPageRef.current = null;
+    setDeletedCameraScanPage(null);
+  }
+
+  function queueDeletedCameraScanPage(page: CameraScanPage, index: number) {
+    finalizeDeletedCameraScanPage();
+    const deleted = { page, index };
+    deletedCameraScanPageRef.current = deleted;
+    setDeletedCameraScanPage(deleted);
+    deletedCameraScanPageTimerRef.current = window.setTimeout(() => {
+      if (deletedCameraScanPageRef.current?.page.id === page.id) finalizeDeletedCameraScanPage();
+    }, 5000);
+  }
+
+  function undoDeletedCameraScanPage() {
+    const deleted = deletedCameraScanPageRef.current;
+    if (!deleted) return;
+    if (deletedCameraScanPageTimerRef.current !== null) {
+      window.clearTimeout(deletedCameraScanPageTimerRef.current);
+      deletedCameraScanPageTimerRef.current = null;
+    }
+    deletedCameraScanPageRef.current = null;
+    setDeletedCameraScanPage(null);
+
+    if (!cameraScanSession) {
+      URL.revokeObjectURL(deleted.page.url);
+      return;
+    }
+
+    setCameraScanSession((current) => {
+      if (!current || current.pages.some((page) => page.id === deleted.page.id)) return current;
+      const pages = [...current.pages];
+      pages.splice(Math.min(deleted.index, pages.length), 0, deleted.page);
+      return { ...current, pages };
+    });
+    setUploadNotice('Gel\u00f6schte Seite wiederhergestellt.');
+  }
+
   function clearCameraScanSession() {
+    finalizeDeletedCameraScanPage();
     setCameraScanSession((current) => {
       for (const page of current?.pages ?? []) URL.revokeObjectURL(page.url);
       return null;
@@ -1352,12 +1407,14 @@ function App() {
   }
 
   function deleteCameraScanPage(id: string) {
+    const session = cameraScanSession;
+    const index = session?.pages.findIndex((page) => page.id === id) ?? -1;
+    if (!session || index < 0) return;
+    const page = session.pages[index];
+    queueDeletedCameraScanPage(page, index);
     setCameraSessionPreviewPageId((previewId) => previewId === id ? null : previewId);
     setCameraScanSession((current) => {
       if (!current) return current;
-      const page = current.pages.find((item) => item.id === id);
-
-      if (page) URL.revokeObjectURL(page.url);
       return { ...current, pages: removeScanPage(current.pages, id) };
     });
   }
@@ -2775,6 +2832,20 @@ function App() {
     );
   };
 
+  const CameraScanDeleteUndo = () => {
+    if (!deletedCameraScanPage || !cameraSessionReviewOpen) return null;
+    return (
+      <aside className="cameraScanDeleteUndo" role="status" aria-live="polite">
+        <Trash2 />
+        <span>
+          <b>{`Seite ${deletedCameraScanPage.index + 1} gel\u00f6scht`}</b>
+          <small>{'Du kannst das 5 Sekunden lang r\u00fcckg\u00e4ngig machen.'}</small>
+        </span>
+        <button type="button" onClick={undoDeletedCameraScanPage}>{'R\u00fcckg\u00e4ngig'}</button>
+      </aside>
+    );
+  };
+
   const CameraSessionPagePreview = () => {
     const session = cameraScanSession;
     if (!cameraSessionReviewOpen || !session || !cameraSessionPreviewPageId) return null;
@@ -3168,6 +3239,7 @@ function App() {
         {CameraCaptureReview()}
         {CameraSessionReview()}
         {CameraSessionPagePreview()}
+        {CameraScanDeleteUndo()}
       </main>
     );
   }

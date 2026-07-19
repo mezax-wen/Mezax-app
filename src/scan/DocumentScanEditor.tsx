@@ -93,13 +93,15 @@ export default function DocumentScanEditor({
       .then((result) => {
         if (!active) return;
         setSourceSize({ width: result.width, height: result.height });
-        const liveCorners = initialCorners && isValidDocumentCorners(initialCorners)
-          ? initialCorners
-          : null;
-        setCorners(liveCorners ?? result.corners);
-        setAnalysisStatus(liveCorners || result.automatic ? 'detected' : 'fallback');
-        setAnalysisMessage(liveCorners
-          ? 'Papierkanten aus der automatischen Aufnahme übernommen.'
+        const liveDetectionConfirmed = Boolean(
+          initialCorners
+          && isValidDocumentCorners(initialCorners)
+          && result.automatic,
+        );
+        setCorners(result.corners);
+        setAnalysisStatus(result.automatic ? 'detected' : 'fallback');
+        setAnalysisMessage(liveDetectionConfirmed
+          ? 'Papierkanten nach der Aufnahme erneut bestätigt.'
           : result.message);
       })
       .catch((reason) => {

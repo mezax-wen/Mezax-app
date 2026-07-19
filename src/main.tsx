@@ -41,7 +41,7 @@ import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, scaleDocumentBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { calculateCameraCrop, fitCameraCaptureSize } from './application/cameraCrop';
 import { measureFrameMovement, measureFrameSharpness } from './application/cameraFrameSelection';
-import { IPHONE_LIVE_CAMERA_TUNING, liveCameraStabilityProgress, nextCameraStabilityFrames, nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
+import { IPHONE_LIVE_CAMERA_TUNING, liveCameraStabilityProgress, nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
@@ -657,7 +657,6 @@ function App() {
     let timer = 0;
     let previousFrame: Uint8ClampedArray | null = null;
     let stableFrames = 0;
-    let visualStableFrames = 0;
     let missedDetectionFrames = 0;
     cameraAutoCaptureTriggeredRef.current = false;
     cameraDetectedCornersRef.current = null;
@@ -708,27 +707,27 @@ function App() {
         setCameraLiveCorners(trackedCorners);
       } else {
         missedDetectionFrames += 1;
-        if (missedDetectionFrames >= 3) setCameraLiveCorners(null);
+        if (missedDetectionFrames >= 8) {
+          cameraDetectedCornersRef.current = null;
+          setCameraLiveCorners(null);
+        }
       }
+      const retainedDocumentDetection = documentDetected
+        || (cameraDetectedCornersRef.current !== null && missedDetectionFrames < 8);
       const movement = previousFrame
         ? measureFrameMovement(previousFrame, frame, canvas.width, canvas.height)
         : Number.POSITIVE_INFINITY;
       const assessment = nextLiveCameraAssessment({
-        documentDetected,
+        documentDetected: retainedDocumentDetection,
         movement,
         stableFrames,
         ...IPHONE_LIVE_CAMERA_TUNING,
       });
       stableFrames = assessment.stableFrames;
-      visualStableFrames = nextCameraStabilityFrames(
-        movement,
-        visualStableFrames,
-        IPHONE_LIVE_CAMERA_TUNING.stabilityThreshold,
-      );
       previousFrame = new Uint8ClampedArray(frame);
       setCameraLiveGuideStatus(assessment.status);
       setCameraStabilityProgress(liveCameraStabilityProgress(
-        visualStableFrames,
+        stableFrames,
         IPHONE_LIVE_CAMERA_TUNING.captureFrames,
       ));
 

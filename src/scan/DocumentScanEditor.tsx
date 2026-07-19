@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { AlertTriangle, Camera, Check, Eye, LoaderCircle, Plus, ScanSearch, SlidersHorizontal, X } from 'lucide-react';
+import { AlertTriangle, Camera, Check, Eye, LoaderCircle, Plus, ScanSearch, SlidersHorizontal, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   analyzeDocumentCorners,
   createScannedDocumentFile,
@@ -58,6 +58,7 @@ export default function DocumentScanEditor({
   const [processing, setProcessing] = useState(false);
   const [previewProcessing, setPreviewProcessing] = useState(false);
   const [resultPreviewUrl, setResultPreviewUrl] = useState<string | null>(null);
+  const [resultPreviewZoom, setResultPreviewZoom] = useState<1 | 2>(1);
   const [error, setError] = useState('');
   const stageRef = useRef<HTMLDivElement | null>(null);
   const imageFrameRef = useRef<HTMLDivElement | null>(null);
@@ -70,6 +71,7 @@ export default function DocumentScanEditor({
     if (resultPreviewUrlRef.current) URL.revokeObjectURL(resultPreviewUrlRef.current);
     resultPreviewUrlRef.current = null;
     setResultPreviewUrl(null);
+    setResultPreviewZoom(1);
   };
 
   useEffect(() => () => {
@@ -394,9 +396,13 @@ export default function DocumentScanEditor({
               <b>Ergebnis kontrollieren</b>
               <small>So wird diese Seite gespeichert</small>
             </span>
+            <button className="scanResultZoomButton" type="button" onClick={() => setResultPreviewZoom((current) => current === 1 ? 2 : 1)} aria-label={resultPreviewZoom === 1 ? 'Scan vergr\u00f6\u00dfern' : 'Zoom zur\u00fccksetzen'}>
+              {resultPreviewZoom === 1 ? <ZoomIn /> : <ZoomOut />}
+              <strong>{resultPreviewZoom}{'\u00d7'}</strong>
+            </button>
           </header>
-          <div className="scanResultPreviewBody">
-            <img src={resultPreviewUrl} alt="Fertig zugeschnittener Dokumentscan" />
+          <div className={`scanResultPreviewBody${resultPreviewZoom === 2 ? ' zoomed' : ''}`}>
+            <img src={resultPreviewUrl} alt="Fertig zugeschnittener Dokumentscan" onDoubleClick={() => setResultPreviewZoom((current) => current === 1 ? 2 : 1)} />
           </div>
           <footer>
             <button className="secondary" type="button" onClick={clearResultPreview}>

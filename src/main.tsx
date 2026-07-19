@@ -1438,6 +1438,24 @@ function App() {
     openDocumentCamera(session.slot, session.targetDocumentId, true, id);
   }
 
+  function editCameraScanPageCrop(id: string) {
+    const session = cameraScanSession;
+    const page = session?.pages.find((item) => item.id === id);
+    if (!session || !page || cameraSessionSaving || cameraSessionRotatingPageId !== null) return;
+    setCameraSessionPreviewPageId(null);
+    setCameraSessionReviewOpen(false);
+    setPendingCameraCapture((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return {
+        file: page.file,
+        url: URL.createObjectURL(page.file),
+        slot: session.slot,
+        targetDocumentId: session.targetDocumentId,
+        replacePageId: page.id,
+      };
+    });
+  }
+
   async function rotateCameraScanPage(id: string) {
     const page = cameraScanSession?.pages.find((item) => item.id === id);
     if (!page || cameraSessionSaving || cameraSessionRotatingPageId) return;
@@ -2877,6 +2895,9 @@ function App() {
           <button className="icon" type="button" disabled={pageIndex === session.pages.length - 1 || cameraSessionRotatingPageId !== null} onClick={() => setCameraSessionPreviewPageId(session.pages[pageIndex + 1].id)} aria-label="N„chste Seite"><ChevronRight /></button>
         </nav>
         <div className="cameraSessionPagePreviewActions">
+          <button className="secondary cameraSessionCropAction" type="button" disabled={cameraSessionRotatingPageId !== null} onClick={() => editCameraScanPageCrop(page.id)}>
+            <ScanSearch /> Zuschnitt bearbeiten
+          </button>
           <button className="secondary" type="button" disabled={cameraSessionRotatingPageId !== null} onClick={() => retakeCameraScanPage(page.id)}>
             <Camera /> Neu fotografieren
           </button>

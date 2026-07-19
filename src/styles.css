@@ -305,3 +305,8 @@ header{background:#fff}
 .cameraSessionPagePreviewActions{position:static;margin:0;padding:11px 14px calc(11px + env(safe-area-inset-bottom,0px));border-top:1px solid #1a3541;background:#081c27;display:grid;grid-template-columns:1fr 1.1fr;gap:9px}.cameraSessionPagePreviewActions .primary,.cameraSessionPagePreviewActions .secondary{min-width:0;min-height:52px;margin:0;padding:9px;font-size:11px;line-height:1.15}.cameraSessionPagePreviewActions .secondary{border-color:#39806f;background:#102d35;color:#64e7c4}.cameraSessionPagePreviewActions svg{width:19px;flex:0 0 auto}
 .cameraSessionPagePreviewTop{grid-template-columns:44px minmax(0,1fr) auto}
 .cameraSessionPagePreviewTools{display:flex;gap:8px;align-items:center;flex:0 0 auto}
+.cameraScanDeleteUndo{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:260;width:min(calc(100% - 28px),402px);min-height:68px;padding:11px 12px;display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:10px;align-items:center;border:1px solid #3a5b64;border-radius:15px;background:#102a35;color:#f4fbfd;box-shadow:0 16px 36px #0009}
+.cameraScanDeleteUndo>svg{width:22px;color:#ff9ca1}
+.cameraScanDeleteUndo>span{display:grid;gap:2px;min-width:0}.cameraScanDeleteUndo b{font-size:12px}.cameraScanDeleteUndo small{color:#a6bbc3;font-size:9px;line-height:1.3}
+.cameraScanDeleteUndo button{min-height:38px;padding:0 11px;border:1px solid #43dcb5;border-radius:10px;background:#163c3b;color:#66e8c6;font-size:10px;font-weight:800}
+@media(max-width:360px){.cameraScanDeleteUndo{grid-template-columns:26px minmax(0,1fr) auto;padding:9px;gap:7px}.cameraScanDeleteUndo small{display:none}.cameraScanDeleteUndo button{padding:0 8px}}

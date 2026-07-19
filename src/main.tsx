@@ -49,7 +49,8 @@ import { loadApplicantProfile, saveApplicantProfile, type ApplicantProfile } fro
 import { optimizeDocumentImage, type SmartScanEnhancement } from './scan/imageOptimizer';
 import { createMultiPageDocument, shouldBundleSelection } from './scan/multiPageDocument';
 import DocumentScanEditor from './scan/DocumentScanEditor';
-import { findDocumentCorners, isSafeAutomaticCrop, type DocumentCornerDetectionMeta, type DocumentCorners } from './scan/documentPerspective';
+import { findDocumentCorners, type DocumentCornerDetectionMeta, type DocumentCorners } from './scan/documentPerspective';
+import { isPlausibleLivePaper, livePaperPolygonPoints, smoothLivePaperCorners } from './scan/livePaperTracking';
 import { moveScanPage, removeScanPage, replaceScanPage } from './scan/scanSession';
 import { rotateImageFileClockwise } from './scan/rotateImage';
 import {
@@ -532,10 +533,12 @@ function App() {
   const [cameraStabilityProgress, setCameraStabilityProgress] = useState(0);
   const [cameraError, setCameraError] = useState('');
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraViewportRef = useRef<HTMLDivElement | null>(null);
   const cameraGuideRef = useRef<HTMLDivElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraAutoCaptureTriggeredRef = useRef(false);
   const cameraDetectedCornersRef = useRef<DocumentCorners | null>(null);
+  const [cameraLiveCorners, setCameraLiveCorners] = useState<DocumentCorners | null>(null);
   const [watermark, setWatermark] = useState(() => rentalWatermark(address));
   const [watermarkCustomized, setWatermarkCustomized] = useState(false);
   const [includeCover, setIncludeCover] = useState(true);
@@ -655,6 +658,7 @@ function App() {
     let previousFrame: Uint8ClampedArray | null = null;
     let stableFrames = 0;
     let visualStableFrames = 0;
+    let missedDetectionFrames = 0;
     cameraAutoCaptureTriggeredRef.current = false;
     cameraDetectedCornersRef.current = null;
 
@@ -665,21 +669,21 @@ function App() {
     const assessLiveFrame = () => {
       if (cancelled || cameraAutoCaptureTriggeredRef.current) return;
       const video = cameraVideoRef.current;
-      const guide = cameraGuideRef.current;
-      if (!video || !guide || !video.videoWidth || !video.videoHeight) {
+      const viewport = cameraViewportRef.current;
+      if (!video || !viewport || !video.videoWidth || !video.videoHeight) {
         timer = window.setTimeout(assessLiveFrame, 240);
         return;
       }
 
       const videoRect = video.getBoundingClientRect();
-      const guideRect = guide.getBoundingClientRect();
+      const viewportRect = viewport.getBoundingClientRect();
       const crop = calculateCameraCrop(
         { width: video.videoWidth, height: video.videoHeight },
         { left: videoRect.left, top: videoRect.top, width: videoRect.width, height: videoRect.height },
-        { left: guideRect.left, top: guideRect.top, width: guideRect.width, height: guideRect.height },
+        { left: viewportRect.left, top: viewportRect.top, width: viewportRect.width, height: viewportRect.height },
         false,
       );
-      const scale = Math.min(1, 220 / Math.max(crop.width, crop.height));
+      const scale = Math.min(1, 300 / Math.max(crop.width, crop.height));
       canvas.width = Math.max(3, Math.round(crop.width * scale));
       canvas.height = Math.max(3, Math.round(crop.height * scale));
       context.drawImage(
@@ -696,8 +700,16 @@ function App() {
       const frame = context.getImageData(0, 0, canvas.width, canvas.height).data;
       const metadata: DocumentCornerDetectionMeta = { source: 'bounds-fallback' };
       const corners = findDocumentCorners(frame, canvas.width, canvas.height, metadata);
-      const documentDetected = metadata.source === 'line-detection' && isSafeAutomaticCrop(corners);
-      if (documentDetected) cameraDetectedCornersRef.current = corners;
+      const documentDetected = metadata.source === 'line-detection' && isPlausibleLivePaper(corners);
+      if (documentDetected) {
+        missedDetectionFrames = 0;
+        const trackedCorners = smoothLivePaperCorners(cameraDetectedCornersRef.current, corners);
+        cameraDetectedCornersRef.current = trackedCorners;
+        setCameraLiveCorners(trackedCorners);
+      } else {
+        missedDetectionFrames += 1;
+        if (missedDetectionFrames >= 3) setCameraLiveCorners(null);
+      }
       const movement = previousFrame
         ? measureFrameMovement(previousFrame, frame, canvas.width, canvas.height)
         : Number.POSITIVE_INFINITY;
@@ -730,6 +742,7 @@ function App() {
 
     setCameraLiveGuideStatus('positioning');
     setCameraStabilityProgress(0);
+    setCameraLiveCorners(null);
     timer = window.setTimeout(assessLiveFrame, 350);
     return () => {
       cancelled = true;
@@ -1173,12 +1186,12 @@ function App() {
     setCameraStatus('capturing');
     setCameraCapturePhase('stabilizing');
     const videoRect = video.getBoundingClientRect();
-    const guideRect = cameraGuideRef.current?.getBoundingClientRect();
-    const crop = guideRect
+    const viewportRect = cameraViewportRef.current?.getBoundingClientRect();
+    const crop = viewportRect
       ? calculateCameraCrop(
         { width: video.videoWidth, height: video.videoHeight },
         { left: videoRect.left, top: videoRect.top, width: videoRect.width, height: videoRect.height },
-        { left: guideRect.left, top: guideRect.top, width: guideRect.width, height: guideRect.height },
+        { left: viewportRect.left, top: viewportRect.top, width: viewportRect.width, height: viewportRect.height },
         cameraFacing === 'user',
       )
       : { x: 0, y: 0, width: video.videoWidth, height: video.videoHeight };
@@ -2704,7 +2717,7 @@ function App() {
           <em>Bleibt lokal</em>
         </div>
 
-        <div className="cameraLiveViewport">
+        <div ref={cameraViewportRef} className="cameraLiveViewport">
           <video
             ref={cameraVideoRef}
             className={cameraFacing === 'user' ? 'mirrored' : ''}
@@ -2716,14 +2729,20 @@ function App() {
 
           {cameraStatus !== 'error' && (
             <div className={`documentGuide ${cameraLiveGuideStatus}`} aria-live="polite">
-              <div ref={cameraGuideRef} className="documentGuideFrame">
-                <i className="topLeft" />
-                <i className="topRight" />
-                <i className="bottomLeft" />
-                <i className="bottomRight" />
-              </div>
+              {cameraLiveCorners ? (
+                <svg className="livePaperOutline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <polygon points={livePaperPolygonPoints(cameraLiveCorners)} />
+                </svg>
+              ) : (
+                <div ref={cameraGuideRef} className="documentGuideFrame">
+                  <i className="topLeft" />
+                  <i className="topRight" />
+                  <i className="bottomLeft" />
+                  <i className="bottomRight" />
+                </div>
+              )}
               <span>{cameraLiveGuideStatus === 'positioning'
-                ? 'Dokument vollständig in den Rahmen legen'
+                ? 'Ganzes Blatt ins Kamerabild halten'
                 : cameraLiveGuideStatus === 'moving'
                   ? 'Dokument erkannt – kurz ruhig halten'
                   : 'Dokument bereit – Aufnahme startet'}</span>

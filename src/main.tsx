@@ -1362,6 +1362,17 @@ function App() {
     });
   }
 
+  function deleteCameraScanPreviewPage(id: string, index: number) {
+    const session = cameraScanSession;
+    if (!session || cameraSessionSaving || cameraSessionRotatingPageId !== null) return;
+    if (!window.confirm('Seite ' + (index + 1) + ' wirklich l\u00f6schen?')) return;
+
+    const nextPage = session.pages[index + 1] ?? session.pages[index - 1];
+    setCameraSessionPreviewPageId(nextPage?.id ?? null);
+    deleteCameraScanPage(id);
+    setUploadNotice('Seite ' + (index + 1) + ' wurde aus dem Scan entfernt.');
+  }
+
   function retakeCameraScanPage(id: string) {
     const session = cameraScanSession;
     if (!session || cameraSessionSaving || !session.pages.some((page) => page.id === id)) return;
@@ -2782,6 +2793,7 @@ function App() {
           <button className="icon" type="button" disabled={cameraSessionRotatingPageId !== null} onClick={() => void rotateCameraScanPage(page.id)} aria-label={'Seite ' + (pageIndex + 1) + ' um 90 Grad drehen'}>
             {cameraSessionRotatingPageId === page.id ? <LoaderCircle className="spin" /> : <RotateCw />}
           </button>
+          <button className="icon danger" type="button" disabled={cameraSessionRotatingPageId !== null} onClick={() => deleteCameraScanPreviewPage(page.id, pageIndex)} aria-label={'Seite ' + (pageIndex + 1) + ' loeschen'}><Trash2 /></button>
         </header>
         <div key={page.id} className="cameraSessionPagePreviewBody">
           <img src={page.url} alt={'Grosse Vorschau Seite ' + (pageIndex + 1)} />

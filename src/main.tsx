@@ -41,7 +41,7 @@ import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, scaleDocumentBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { calculateCameraCrop, fitCameraCaptureSize } from './application/cameraCrop';
 import { measureFrameMovement, measureFrameSharpness } from './application/cameraFrameSelection';
-import { liveCameraStabilityProgress, nextCameraStabilityFrames, nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
+import { IPHONE_LIVE_CAMERA_TUNING, liveCameraStabilityProgress, nextCameraStabilityFrames, nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
@@ -697,12 +697,24 @@ function App() {
       const movement = previousFrame
         ? measureFrameMovement(previousFrame, frame, canvas.width, canvas.height)
         : Number.POSITIVE_INFINITY;
-      const assessment = nextLiveCameraAssessment({ documentDetected, movement, stableFrames });
+      const assessment = nextLiveCameraAssessment({
+        documentDetected,
+        movement,
+        stableFrames,
+        ...IPHONE_LIVE_CAMERA_TUNING,
+      });
       stableFrames = assessment.stableFrames;
-      visualStableFrames = nextCameraStabilityFrames(movement, visualStableFrames);
+      visualStableFrames = nextCameraStabilityFrames(
+        movement,
+        visualStableFrames,
+        IPHONE_LIVE_CAMERA_TUNING.stabilityThreshold,
+      );
       previousFrame = new Uint8ClampedArray(frame);
       setCameraLiveGuideStatus(assessment.status);
-      setCameraStabilityProgress(liveCameraStabilityProgress(visualStableFrames));
+      setCameraStabilityProgress(liveCameraStabilityProgress(
+        visualStableFrames,
+        IPHONE_LIVE_CAMERA_TUNING.captureFrames,
+      ));
 
       if (assessment.shouldCapture) {
         cameraAutoCaptureTriggeredRef.current = true;

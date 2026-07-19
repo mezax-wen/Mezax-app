@@ -2783,9 +2783,14 @@ function App() {
             {cameraSessionRotatingPageId === page.id ? <LoaderCircle className="spin" /> : <RotateCw />}
           </button>
         </header>
-        <div className="cameraSessionPagePreviewBody">
+        <div key={page.id} className="cameraSessionPagePreviewBody">
           <img src={page.url} alt={'Grosse Vorschau Seite ' + (pageIndex + 1)} />
         </div>
+        <nav className="cameraSessionPagePreviewNavigation" aria-label="Scan-Seiten durchbl„ttern">
+          <button className="icon" type="button" disabled={pageIndex === 0 || cameraSessionRotatingPageId !== null} onClick={() => setCameraSessionPreviewPageId(session.pages[pageIndex - 1].id)} aria-label="Vorherige Seite"><ArrowLeft /></button>
+          <span><b>{pageIndex + 1} von {session.pages.length}</b><small>Seitenkontrolle</small></span>
+          <button className="icon" type="button" disabled={pageIndex === session.pages.length - 1 || cameraSessionRotatingPageId !== null} onClick={() => setCameraSessionPreviewPageId(session.pages[pageIndex + 1].id)} aria-label="N„chste Seite"><ChevronRight /></button>
+        </nav>
         <div className="cameraSessionPagePreviewActions">
           <button className="secondary" type="button" disabled={cameraSessionRotatingPageId !== null} onClick={() => retakeCameraScanPage(page.id)}>
             <Camera /> Neu fotografieren

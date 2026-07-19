@@ -154,6 +154,35 @@ assertNear(texturedCorners.topLeft.x, 44 / texturedWidth, 'Texturtest oben links
 assertNear(texturedCorners.topLeft.y, 24 / texturedHeight, 'Texturtest oben links y');
 assertNear(texturedCorners.bottomRight.x, 136 / texturedWidth, 'Texturtest unten rechts x');
 assertNear(texturedCorners.bottomRight.y, 216 / texturedHeight, 'Texturtest unten rechts y');
+const distractingWidth = 220;
+const distractingHeight = 300;
+const distractingPixels = new Uint8ClampedArray(distractingWidth * distractingHeight * 4);
+for (let y = 0; y < distractingHeight; y += 1) {
+  for (let x = 0; x < distractingWidth; x += 1) {
+    const index = (y * distractingWidth + x) * 4;
+    const insidePaper = x >= 54 && x <= 166 && y >= 38 && y <= 264;
+    const separateBrightStripe = x >= 192;
+    const texture = 96 + ((x * 17 + y * 11) % 42);
+    const value = insidePaper ? 224 : separateBrightStripe ? 236 : texture;
+    distractingPixels[index] = value;
+    distractingPixels[index + 1] = insidePaper || separateBrightStripe ? value - 3 : value - 15;
+    distractingPixels[index + 2] = insidePaper || separateBrightStripe ? value - 6 : value - 29;
+    distractingPixels[index + 3] = 255;
+  }
+}
+const distractingMeta: DocumentCornerDetectionMeta = { source: 'bounds-fallback' };
+const distractingCorners = findDocumentCorners(
+  distractingPixels,
+  distractingWidth,
+  distractingHeight,
+  distractingMeta,
+);
+if (distractingMeta.source !== 'line-detection') {
+  throw new Error('Das mittige Blatt muss trotz heller Hintergrundfläche erkannt werden.');
+}
+assertNear(distractingCorners.topLeft.x, 54 / distractingWidth, 'Ablenkungstest oben links x');
+assertNear(distractingCorners.topRight.x, 166 / distractingWidth, 'Ablenkungstest oben rechts x');
+assertNear(distractingCorners.bottomRight.y, 264 / distractingHeight, 'Ablenkungstest unten rechts y');
 const consistentPaperWidth = 215;
 const consistentPaperHeight = 300;
 const consistentPaperPixels = new Uint8ClampedArray(consistentPaperWidth * consistentPaperHeight * 4);

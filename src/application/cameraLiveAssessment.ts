@@ -2,8 +2,8 @@ export type LiveCameraGuideStatus = 'positioning' | 'moving' | 'ready';
 
 export const IPHONE_LIVE_CAMERA_TUNING = {
   stabilityThreshold: 9,
-  readyFrames: 5,
-  captureFrames: 6,
+  readyFrames: 4,
+  captureFrames: 5,
 } as const;
 
 type LiveCameraAssessmentInput = {
@@ -24,10 +24,18 @@ export function nextLiveCameraAssessment({
   captureFrames = 4,
 }: LiveCameraAssessmentInput) {
   if (!documentDetected) {
-    return { stableFrames: 0, status: 'positioning' as const, shouldCapture: false };
+    return {
+      stableFrames: Math.max(0, stableFrames - 1),
+      status: 'positioning' as const,
+      shouldCapture: false,
+    };
   }
 
-  const nextStableFrames = movement <= stabilityThreshold ? stableFrames + 1 : 0;
+  const nextStableFrames = movement <= stabilityThreshold
+    ? stableFrames + 1
+    : movement <= stabilityThreshold * 1.7
+      ? Math.max(0, stableFrames - 1)
+      : 0;
   return {
     stableFrames: nextStableFrames,
     status: nextStableFrames >= readyFrames ? 'ready' as const : 'moving' as const,

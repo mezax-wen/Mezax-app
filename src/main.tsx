@@ -722,7 +722,7 @@ function App() {
 
       if (assessment.shouldCapture) {
         cameraAutoCaptureTriggeredRef.current = true;
-        void captureDocumentPhoto();
+        void captureDocumentPhoto(true);
         return;
       }
       timer = window.setTimeout(assessLiveFrame, 240);
@@ -1160,7 +1160,7 @@ function App() {
     stageCameraCapture(fileList, target.slot, target.targetDocumentId, target.replacePageId);
   }
 
-  async function captureDocumentPhoto() {
+  async function captureDocumentPhoto(autoTriggered = false) {
     const target = cameraTarget;
     const detectedCorners = cameraDetectedCornersRef.current ?? undefined;
     const video = cameraVideoRef.current;
@@ -1218,9 +1218,9 @@ function App() {
 
     // Erst zwei ruhige Bildwechsel abwarten. Nach spätestens 1,2 Sekunden wird trotzdem
     // ausgelöst, damit der Nutzer nie in der Stabilitätsprüfung hängen bleibt.
-    const stabilityDeadline = performance.now() + 1200;
+    const stabilityDeadline = performance.now() + (autoTriggered ? 0 : 1200);
     let previousMotionFrame: Uint8ClampedArray | null = null;
-    let stableComparisons = 0;
+    let stableComparisons = autoTriggered ? 2 : 0;
     while (performance.now() < stabilityDeadline && stableComparisons < 2) {
       motionContext.drawImage(
         video,
@@ -2769,7 +2769,7 @@ function App() {
             <button className="cameraRoundAction" type="button" disabled={cameraStatus === 'capturing'} onClick={() => closeDocumentCamera()} aria-label="Kamera schließen">
               <X />
             </button>
-            <button className={'cameraShutter progress-' + Math.round(cameraStabilityProgress * 4) + (cameraLiveGuideStatus === 'ready' ? ' ready' : '')} type="button" disabled={!cameraReady} onClick={captureDocumentPhoto} aria-label={'Dokument fotografieren - Stabilit\u00e4t ' + Math.round(cameraStabilityProgress * 100) + ' Prozent'}>
+            <button className={'cameraShutter progress-' + Math.round(cameraStabilityProgress * 4) + (cameraLiveGuideStatus === 'ready' ? ' ready' : '')} type="button" disabled={!cameraReady} onClick={() => void captureDocumentPhoto(false)} aria-label={'Dokument fotografieren - Stabilit\u00e4t ' + Math.round(cameraStabilityProgress * 100) + ' Prozent'}>
               <span />
             </button>
             <button className="cameraRoundAction" type="button" disabled={cameraStatus === 'capturing'} onClick={switchDocumentCamera} aria-label="Kamera wechseln">

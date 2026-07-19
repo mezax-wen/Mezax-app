@@ -9,29 +9,36 @@ import {
 const iphoneNoise = nextLiveCameraAssessment({
   documentDetected: true,
   movement: 8,
-  stableFrames: 4,
+  stableFrames: 3,
   ...IPHONE_LIVE_CAMERA_TUNING,
 });
-assert.deepEqual(iphoneNoise, { stableFrames: 5, status: 'ready', shouldCapture: false });
+assert.deepEqual(iphoneNoise, { stableFrames: 4, status: 'ready', shouldCapture: false });
 
 const iphoneCapture = nextLiveCameraAssessment({
   documentDetected: true,
   movement: 8,
-  stableFrames: 5,
+  stableFrames: 4,
   ...IPHONE_LIVE_CAMERA_TUNING,
 });
-assert.deepEqual(iphoneCapture, { stableFrames: 6, status: 'ready', shouldCapture: true });
+assert.deepEqual(iphoneCapture, { stableFrames: 5, status: 'ready', shouldCapture: true });
 
 const missingDocument = nextLiveCameraAssessment({
   documentDetected: false,
   movement: 0,
   stableFrames: 3,
 });
-assert.deepEqual(missingDocument, { stableFrames: 0, status: 'positioning', shouldCapture: false });
+assert.deepEqual(missingDocument, { stableFrames: 2, status: 'positioning', shouldCapture: false });
+
+const mildlyMovingDocument = nextLiveCameraAssessment({
+  documentDetected: true,
+  movement: 7,
+  stableFrames: 2,
+});
+assert.deepEqual(mildlyMovingDocument, { stableFrames: 1, status: 'moving', shouldCapture: false });
 
 const movingDocument = nextLiveCameraAssessment({
   documentDetected: true,
-  movement: 8,
+  movement: 9,
   stableFrames: 2,
 });
 assert.deepEqual(movingDocument, { stableFrames: 0, status: 'moving', shouldCapture: false });

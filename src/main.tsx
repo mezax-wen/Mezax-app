@@ -41,7 +41,7 @@ import { batchScanProgress, pendingDocumentIds } from './application/scanBatch';
 import { createManualBox, scaleDocumentBox, toDocumentPoint, type DocumentPoint } from './application/manualRedaction';
 import { calculateCameraCrop, fitCameraCaptureSize } from './application/cameraCrop';
 import { measureFrameMovement, measureFrameSharpness } from './application/cameraFrameSelection';
-import { nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
+import { liveCameraStabilityProgress, nextLiveCameraAssessment, type LiveCameraGuideStatus } from './application/cameraLiveAssessment';
 import { reviewDocumentAssignment, slotForClassification } from './application/documentAssignment';
 import { createPdfPagePlan } from './application/pdfPagePlan';
 import { allDocumentsReadyForExport } from './application/exportReadiness';
@@ -528,6 +528,7 @@ function App() {
   const [cameraStatus, setCameraStatus] = useState<'idle' | 'loading' | 'ready' | 'capturing' | 'error'>('idle');
   const [cameraCapturePhase, setCameraCapturePhase] = useState<'stabilizing' | 'selecting'>('stabilizing');
   const [cameraLiveGuideStatus, setCameraLiveGuideStatus] = useState<LiveCameraGuideStatus>('positioning');
+  const [cameraStabilityProgress, setCameraStabilityProgress] = useState(0);
   const [cameraError, setCameraError] = useState('');
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraGuideRef = useRef<HTMLDivElement | null>(null);
@@ -699,6 +700,7 @@ function App() {
       stableFrames = assessment.stableFrames;
       previousFrame = new Uint8ClampedArray(frame);
       setCameraLiveGuideStatus(assessment.status);
+      setCameraStabilityProgress(liveCameraStabilityProgress(assessment.stableFrames));
 
       if (assessment.shouldCapture) {
         cameraAutoCaptureTriggeredRef.current = true;
@@ -709,6 +711,7 @@ function App() {
     };
 
     setCameraLiveGuideStatus('positioning');
+    setCameraStabilityProgress(0);
     timer = window.setTimeout(assessLiveFrame, 350);
     return () => {
       cancelled = true;
@@ -2746,7 +2749,7 @@ function App() {
             <button className="cameraRoundAction" type="button" disabled={cameraStatus === 'capturing'} onClick={() => closeDocumentCamera()} aria-label="Kamera schlieÃŸen">
               <X />
             </button>
-            <button className="cameraShutter" type="button" disabled={!cameraReady} onClick={captureDocumentPhoto} aria-label="Dokument fotografieren">
+            <button className={'cameraShutter progress-' + Math.round(cameraStabilityProgress * 4) + (cameraLiveGuideStatus === 'ready' ? ' ready' : '')} type="button" disabled={!cameraReady} onClick={captureDocumentPhoto} aria-label={'Dokument fotografieren - Stabilit\u00e4t ' + Math.round(cameraStabilityProgress * 100) + ' Prozent'}>
               <span />
             </button>
             <button className="cameraRoundAction" type="button" disabled={cameraStatus === 'capturing'} onClick={switchDocumentCamera} aria-label="Kamera wechseln">
@@ -2889,10 +2892,10 @@ function App() {
         <div key={page.id} className="cameraSessionPagePreviewBody">
           <img src={page.url} alt={'Grosse Vorschau Seite ' + (pageIndex + 1)} />
         </div>
-        <nav className="cameraSessionPagePreviewNavigation" aria-label="Scan-Seiten durchbl„ttern">
+        <nav className="cameraSessionPagePreviewNavigation" aria-label="Scan-Seiten durchblï¿½ttern">
           <button className="icon" type="button" disabled={pageIndex === 0 || cameraSessionRotatingPageId !== null} onClick={() => setCameraSessionPreviewPageId(session.pages[pageIndex - 1].id)} aria-label="Vorherige Seite"><ArrowLeft /></button>
           <span><b>{pageIndex + 1} von {session.pages.length}</b><small>Seitenkontrolle</small></span>
-          <button className="icon" type="button" disabled={pageIndex === session.pages.length - 1 || cameraSessionRotatingPageId !== null} onClick={() => setCameraSessionPreviewPageId(session.pages[pageIndex + 1].id)} aria-label="N„chste Seite"><ChevronRight /></button>
+          <button className="icon" type="button" disabled={pageIndex === session.pages.length - 1 || cameraSessionRotatingPageId !== null} onClick={() => setCameraSessionPreviewPageId(session.pages[pageIndex + 1].id)} aria-label="Nï¿½chste Seite"><ChevronRight /></button>
         </nav>
         <div className="cameraSessionPagePreviewActions">
           <button className="secondary cameraSessionCropAction" type="button" disabled={cameraSessionRotatingPageId !== null} onClick={() => editCameraScanPageCrop(page.id)}>

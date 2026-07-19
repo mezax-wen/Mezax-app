@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { nextLiveCameraAssessment } from './cameraLiveAssessment.ts';
+import { liveCameraStabilityProgress, nextLiveCameraAssessment } from './cameraLiveAssessment.ts';
 
 const missingDocument = nextLiveCameraAssessment({
   documentDetected: false,
@@ -28,5 +28,9 @@ const captureDocument = nextLiveCameraAssessment({
   stableFrames: 3,
 });
 assert.deepEqual(captureDocument, { stableFrames: 4, status: 'ready', shouldCapture: true });
+assert.equal(liveCameraStabilityProgress(0), 0);
+assert.equal(liveCameraStabilityProgress(2), 0.5);
+assert.equal(liveCameraStabilityProgress(4), 1);
+assert.equal(liveCameraStabilityProgress(8), 1);
 
 console.log('cameraLiveAssessment tests passed');

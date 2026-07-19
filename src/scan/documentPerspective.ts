@@ -257,6 +257,206 @@ function stabilizeDetectedQuadrilateral(
   );
   return score(best) >= originalScore + 2 ? best : corners;
 }
+function median(values: number[]) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((first, second) => first - second);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function robustFitLine(points: PixelPoint[], independent: 'x' | 'y') {
+  let selected = points;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const line = fitLine(selected, independent);
+    if (!line || selected.length < 8) return line;
+    const dependent = independent === 'x' ? 'y' : 'x';
+    const residuals = selected
+      .map((point) => Math.abs(point[dependent] - (line.slope * point[independent] + line.intercept)))
+      .sort((first, second) => first - second);
+    const cutoff = Math.max(2, residuals[Math.floor(residuals.length * 0.72)] ?? 2);
+    selected = selected.filter((point) => (
+      Math.abs(point[dependent] - (line.slope * point[independent] + line.intercept)) <= cutoff
+    ));
+  }
+  return fitLine(selected, independent);
+}
+
+function findCenterSeededPaperCorners(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+): DocumentCorners | null {
+  const sampleStep = Math.max(1, Math.round(Math.min(width, height) / 150));
+  const samples: Array<{
+    red: number;
+    green: number;
+    blue: number;
+    light: number;
+    chroma: number;
+  }> = [];
+  for (let y = Math.round(height * 0.22); y <= height * 0.82; y += sampleStep) {
+    for (let x = Math.round(width * 0.22); x <= width * 0.78; x += sampleStep) {
+      const index = (y * width + x) * 4;
+      const red = pixels[index];
+      const green = pixels[index + 1];
+      const blue = pixels[index + 2];
+      samples.push({
+        red,
+        green,
+        blue,
+        light: luminance(red, green, blue),
+        chroma: Math.max(red, green, blue) - Math.min(red, green, blue),
+      });
+    }
+  }
+  if (samples.length < 20) return null;
+  samples.sort((first, second) => first.light - second.light);
+  const brighterSamples = samples.slice(Math.floor(samples.length * 0.58));
+  const targetRed = median(brighterSamples.map((sample) => sample.red));
+  const targetGreen = median(brighterSamples.map((sample) => sample.green));
+  const targetBlue = median(brighterSamples.map((sample) => sample.blue));
+  const targetLight = median(brighterSamples.map((sample) => sample.light));
+  const targetChroma = median(brighterSamples.map((sample) => sample.chroma));
+  const totalPixels = width * height;
+  const mask = new Uint8Array(totalPixels);
+
+  for (let index = 0; index < totalPixels; index += 1) {
+    const pixel = index * 4;
+    const red = pixels[pixel];
+    const green = pixels[pixel + 1];
+    const blue = pixels[pixel + 2];
+    const light = luminance(red, green, blue);
+    const chroma = Math.max(red, green, blue) - Math.min(red, green, blue);
+    const colorDistance = Math.abs(red - targetRed)
+      + Math.abs(green - targetGreen)
+      + Math.abs(blue - targetBlue);
+    if (light >= targetLight - 45
+      && chroma <= Math.max(65, targetChroma + 28)
+      && colorDistance <= 150) {
+      mask[index] = 1;
+    }
+  }
+
+  let seed = -1;
+  const centerX = Math.floor(width / 2);
+  const centerY = Math.floor(height / 2);
+  for (let radius = 0; radius <= Math.max(width, height) / 3 && seed < 0; radius += 1) {
+    const candidates = [
+      [centerX + radius, centerY],
+      [centerX - radius, centerY],
+      [centerX, centerY + radius],
+      [centerX, centerY - radius],
+    ];
+    for (const [x, y] of candidates) {
+      if (x < 0 || x >= width || y < 0 || y >= height) continue;
+      const candidate = y * width + x;
+      if (mask[candidate]) {
+        seed = candidate;
+        break;
+      }
+    }
+  }
+  if (seed < 0) return null;
+
+  const visited = new Uint8Array(totalPixels);
+  const queue = new Int32Array(totalPixels);
+  const component: number[] = [];
+  let head = 0;
+  let tail = 0;
+  let minX = width;
+  let maxX = -1;
+  let minY = height;
+  let maxY = -1;
+  queue[tail++] = seed;
+  visited[seed] = 1;
+
+  while (head < tail) {
+    const current = queue[head++];
+    const x = current % width;
+    const y = Math.floor(current / width);
+    component.push(current);
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        if (!offsetX && !offsetY) continue;
+        const nextX = x + offsetX;
+        const nextY = y + offsetY;
+        if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) continue;
+        const next = nextY * width + nextX;
+        if (!mask[next] || visited[next]) continue;
+        visited[next] = 1;
+        queue[tail++] = next;
+      }
+    }
+  }
+
+  const componentWidth = maxX - minX + 1;
+  const componentHeight = maxY - minY + 1;
+  const boxArea = componentWidth * componentHeight;
+  const touchedFrameEdges = Number(minX <= 1)
+    + Number(maxX >= width - 2)
+    + Number(minY <= 1)
+    + Number(maxY >= height - 2);
+  if (component.length < totalPixels * 0.06
+    || componentWidth < width * 0.32
+    || componentHeight < height * 0.35
+    || boxArea < totalPixels * 0.10
+    || boxArea > totalPixels * 0.93
+    || component.length / boxArea < 0.34
+    || touchedFrameEdges >= 2) {
+    return null;
+  }
+
+  const rowMin = new Int32Array(height).fill(width);
+  const rowMax = new Int32Array(height).fill(-1);
+  const columnMin = new Int32Array(width).fill(height);
+  const columnMax = new Int32Array(width).fill(-1);
+  component.forEach((current) => {
+    const x = current % width;
+    const y = Math.floor(current / width);
+    rowMin[y] = Math.min(rowMin[y], x);
+    rowMax[y] = Math.max(rowMax[y], x);
+    columnMin[x] = Math.min(columnMin[x], y);
+    columnMax[x] = Math.max(columnMax[x], y);
+  });
+
+  const leftPoints: PixelPoint[] = [];
+  const rightPoints: PixelPoint[] = [];
+  const topPoints: PixelPoint[] = [];
+  const bottomPoints: PixelPoint[] = [];
+  for (let y = minY; y <= maxY; y += 1) {
+    if (rowMax[y] - rowMin[y] < componentWidth * 0.42) continue;
+    leftPoints.push({ x: rowMin[y], y });
+    rightPoints.push({ x: rowMax[y], y });
+  }
+  for (let x = minX; x <= maxX; x += 1) {
+    if (columnMax[x] - columnMin[x] < componentHeight * 0.42) continue;
+    topPoints.push({ x, y: columnMin[x] });
+    bottomPoints.push({ x, y: columnMax[x] });
+  }
+
+  const leftLine = robustFitLine(leftPoints, 'y');
+  const rightLine = robustFitLine(rightPoints, 'y');
+  const topLine = robustFitLine(topPoints, 'x');
+  const bottomLine = robustFitLine(bottomPoints, 'x');
+  if (!leftLine || !rightLine || !topLine || !bottomLine) return null;
+  const normalize = (point: PixelPoint): ScanPoint => ({
+    x: clamp(point.x / width),
+    y: clamp(point.y / height),
+  });
+  const corners: DocumentCorners = {
+    topLeft: normalize(intersectVerticalHorizontal(leftLine, topLine)),
+    topRight: normalize(intersectVerticalHorizontal(rightLine, topLine)),
+    bottomRight: normalize(intersectVerticalHorizontal(rightLine, bottomLine)),
+    bottomLeft: normalize(intersectVerticalHorizontal(leftLine, bottomLine)),
+  };
+  return isSafeDetectedPaperCrop(corners) ? corners : null;
+}
 export function findDocumentCorners(
   pixels: Uint8ClampedArray,
   width: number,
@@ -281,6 +481,11 @@ export function findDocumentCorners(
   samples.sort((a, b) => a - b);
   const dark = samples[Math.floor(samples.length * 0.12)] ?? 30;
   const light = samples[Math.floor(samples.length * 0.88)] ?? 220;
+  const centerSeededPaper = findCenterSeededPaperCorners(pixels, width, height);
+  if (centerSeededPaper) {
+    if (metadata) metadata.source = 'line-detection';
+    return centerSeededPaper;
+  }
   const threshold = dark + Math.max(24, (light - dark) * 0.58);
   const isPaper = (x: number, y: number) => {
     const index = (Math.round(y) * width + Math.round(x)) * 4;

@@ -154,4 +154,28 @@ assertNear(texturedCorners.topLeft.x, 44 / texturedWidth, 'Texturtest oben links
 assertNear(texturedCorners.topLeft.y, 24 / texturedHeight, 'Texturtest oben links y');
 assertNear(texturedCorners.bottomRight.x, 136 / texturedWidth, 'Texturtest unten rechts x');
 assertNear(texturedCorners.bottomRight.y, 216 / texturedHeight, 'Texturtest unten rechts y');
+const consistentPaperWidth = 215;
+const consistentPaperHeight = 300;
+const consistentPaperPixels = new Uint8ClampedArray(consistentPaperWidth * consistentPaperHeight * 4);
+for (let y = 0; y < consistentPaperHeight; y += 1) {
+  for (let x = 0; x < consistentPaperWidth; x += 1) {
+    const index = (y * consistentPaperWidth + x) * 4;
+    const insidePaper = x >= 50 && x <= 168 && y >= 42 && y <= 258;
+    const value = insidePaper ? 232 : 72;
+    consistentPaperPixels[index] = value;
+    consistentPaperPixels[index + 1] = value;
+    consistentPaperPixels[index + 2] = value;
+    consistentPaperPixels[index + 3] = 255;
+  }
+}
+const consistentMeta: DocumentCornerDetectionMeta = { source: 'bounds-fallback' };
+const consistentCorners = findDocumentCorners(
+  consistentPaperPixels,
+  consistentPaperWidth,
+  consistentPaperHeight,
+  consistentMeta,
+);
+if (consistentMeta.source !== 'line-detection' || !isSafeDetectedPaperCrop(consistentCorners)) {
+  throw new Error('Eine vollständige Papierkontur muss mit vier konsistenten Ecken erkannt werden.');
+}
 console.info('Dokument-Scaneditor: schräge Blattecken und Filter werden lokal vorbereitet.');

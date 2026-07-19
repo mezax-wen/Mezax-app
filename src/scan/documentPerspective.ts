@@ -149,6 +149,114 @@ export function isSafeDetectedPaperCrop(corners: DocumentCorners) {
     && boundaryPairsConsistent;
 }
 
+function detectedBoundaryContrast(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  corners: DocumentCorners,
+) {
+  const points = [corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft];
+  const center = points.reduce((sum, point) => ({
+    x: sum.x + point.x / 4,
+    y: sum.y + point.y / 4,
+  }), { x: 0, y: 0 });
+  const offset = Math.max(2, Math.min(width, height) * 0.012);
+  const sample = (point: ScanPoint) => {
+    const x = Math.round(clamp(point.x) * (width - 1));
+    const y = Math.round(clamp(point.y) * (height - 1));
+    const index = (y * width + x) * 4;
+    return luminance(pixels[index], pixels[index + 1], pixels[index + 2]);
+  };
+  let contrast = 0;
+  let samples = 0;
+  points.forEach((start, index) => {
+    const end = points[(index + 1) % points.length];
+    for (let step = 1; step <= 7; step += 1) {
+      const position = step / 8;
+      const edge = {
+        x: start.x + (end.x - start.x) * position,
+        y: start.y + (end.y - start.y) * position,
+      };
+      const towardCenterX = center.x - edge.x;
+      const towardCenterY = center.y - edge.y;
+      const length = Math.max(0.0001, Math.hypot(towardCenterX * width, towardCenterY * height));
+      const shift = { x: towardCenterX / length * offset, y: towardCenterY / length * offset };
+      contrast += sample({ x: edge.x + shift.x, y: edge.y + shift.y })
+        - sample({ x: edge.x - shift.x, y: edge.y - shift.y });
+      samples += 1;
+    }
+  });
+  return samples ? contrast / samples : 0;
+}
+
+function oppositeEdgeConsistency(corners: DocumentCorners) {
+  const topWidth = distance(corners.topLeft, corners.topRight);
+  const bottomWidth = distance(corners.bottomLeft, corners.bottomRight);
+  const leftHeight = distance(corners.topLeft, corners.bottomLeft);
+  const rightHeight = distance(corners.topRight, corners.bottomRight);
+  return Math.min(topWidth, bottomWidth) / Math.max(topWidth, bottomWidth)
+    + Math.min(leftHeight, rightHeight) / Math.max(leftHeight, rightHeight);
+}
+
+function stabilizeDetectedQuadrilateral(
+  corners: DocumentCorners,
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+) {
+  const originalConsistency = oppositeEdgeConsistency(corners);
+  if (originalConsistency >= 1.48) return corners;
+
+  const point = (x: number, y: number): ScanPoint => ({ x: clamp(x), y: clamp(y) });
+  const { topLeft, topRight, bottomRight, bottomLeft } = corners;
+  const candidates: DocumentCorners[] = [
+    {
+      ...corners,
+      topLeft: point(
+        topRight.x + bottomLeft.x - bottomRight.x,
+        topRight.y + bottomLeft.y - bottomRight.y,
+      ),
+    },
+    {
+      ...corners,
+      topRight: point(
+        topLeft.x + bottomRight.x - bottomLeft.x,
+        topLeft.y + bottomRight.y - bottomLeft.y,
+      ),
+    },
+    {
+      ...corners,
+      bottomRight: point(
+        topRight.x + bottomLeft.x - topLeft.x,
+        topRight.y + bottomLeft.y - topLeft.y,
+      ),
+    },
+    {
+      ...corners,
+      bottomLeft: point(
+        topLeft.x + bottomRight.x - topRight.x,
+        topLeft.y + bottomRight.y - topRight.y,
+      ),
+    },
+  ].filter(isValidDocumentCorners);
+
+  const score = (candidate: DocumentCorners) => {
+    const keys: Array<keyof DocumentCorners> = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'];
+    const displacement = keys.reduce(
+      (sum, key) => sum + distance(corners[key], candidate[key]),
+      0,
+    );
+    return oppositeEdgeConsistency(candidate) * 20
+      + detectedBoundaryContrast(pixels, width, height, candidate)
+      - displacement * 8;
+  };
+  const originalScore = score(corners);
+  const best = candidates.reduce(
+    (current, candidate) => (score(candidate) > score(current) ? candidate : current),
+    corners,
+  );
+  return score(best) >= originalScore + 2 ? best : corners;
+}
 export function findDocumentCorners(
   pixels: Uint8ClampedArray,
   width: number,
@@ -245,9 +353,10 @@ export function findDocumentCorners(
     bottomRight: clampPoint(rawDetected.bottomRight),
     bottomLeft: clampPoint(rawDetected.bottomLeft),
   };
-  const valid = withinOverscan && polygonArea(detected) >= 0.24 && isValidDocumentCorners(detected);
+  const stabilized = stabilizeDetectedQuadrilateral(detected, pixels, width, height);
+  const valid = withinOverscan && polygonArea(stabilized) >= 0.24 && isValidDocumentCorners(stabilized);
   if (valid && metadata) metadata.source = 'line-detection';
-  return valid ? detected : fallback;
+  return valid ? stabilized : fallback;
 }
 
 function loadImage(url: string) {

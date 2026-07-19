@@ -1,5 +1,9 @@
 import { strict as assert } from 'node:assert';
-import { liveCameraStabilityProgress, nextLiveCameraAssessment } from './cameraLiveAssessment.ts';
+import {
+  liveCameraStabilityProgress,
+  nextCameraStabilityFrames,
+  nextLiveCameraAssessment,
+} from './cameraLiveAssessment.ts';
 
 const missingDocument = nextLiveCameraAssessment({
   documentDetected: false,
@@ -32,5 +36,10 @@ assert.equal(liveCameraStabilityProgress(0), 0);
 assert.equal(liveCameraStabilityProgress(2), 0.5);
 assert.equal(liveCameraStabilityProgress(4), 1);
 assert.equal(liveCameraStabilityProgress(8), 1);
+
+assert.equal(nextCameraStabilityFrames(Number.POSITIVE_INFINITY, 3), 0);
+assert.equal(nextCameraStabilityFrames(8, 3), 2);
+assert.equal(nextCameraStabilityFrames(2, 0), 1);
+assert.equal(nextCameraStabilityFrames(2, 3), 4);
 
 console.log('cameraLiveAssessment tests passed');

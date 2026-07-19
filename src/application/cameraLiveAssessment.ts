@@ -29,6 +29,16 @@ export function nextLiveCameraAssessment({
   };
 }
 
+export function nextCameraStabilityFrames(
+  movement: number,
+  stableFrames: number,
+  stabilityThreshold = 4.8,
+) {
+  if (!Number.isFinite(movement)) return 0;
+  if (movement > stabilityThreshold) return Math.max(0, stableFrames - 1);
+  return Math.max(0, stableFrames) + 1;
+}
+
 export function liveCameraStabilityProgress(stableFrames: number, captureFrames = 4) {
   if (!Number.isFinite(stableFrames) || !Number.isFinite(captureFrames) || captureFrames <= 0) return 0;
   return Math.min(1, Math.max(0, stableFrames / captureFrames));

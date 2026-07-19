@@ -1,9 +1,26 @@
 import { strict as assert } from 'node:assert';
 import {
+  IPHONE_LIVE_CAMERA_TUNING,
   liveCameraStabilityProgress,
   nextCameraStabilityFrames,
   nextLiveCameraAssessment,
 } from './cameraLiveAssessment.ts';
+
+const iphoneNoise = nextLiveCameraAssessment({
+  documentDetected: true,
+  movement: 8,
+  stableFrames: 4,
+  ...IPHONE_LIVE_CAMERA_TUNING,
+});
+assert.deepEqual(iphoneNoise, { stableFrames: 5, status: 'ready', shouldCapture: false });
+
+const iphoneCapture = nextLiveCameraAssessment({
+  documentDetected: true,
+  movement: 8,
+  stableFrames: 5,
+  ...IPHONE_LIVE_CAMERA_TUNING,
+});
+assert.deepEqual(iphoneCapture, { stableFrames: 6, status: 'ready', shouldCapture: true });
 
 const missingDocument = nextLiveCameraAssessment({
   documentDetected: false,

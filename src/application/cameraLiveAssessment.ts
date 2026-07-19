@@ -1,5 +1,11 @@
 export type LiveCameraGuideStatus = 'positioning' | 'moving' | 'ready';
 
+export const IPHONE_LIVE_CAMERA_TUNING = {
+  stabilityThreshold: 9,
+  readyFrames: 5,
+  captureFrames: 6,
+} as const;
+
 type LiveCameraAssessmentInput = {
   documentDetected: boolean;
   movement: number;

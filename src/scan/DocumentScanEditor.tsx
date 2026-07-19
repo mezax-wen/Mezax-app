@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { AlertTriangle, Camera, Check, LoaderCircle, Plus, ScanSearch, SlidersHorizontal, X } from 'lucide-react';
+import { AlertTriangle, Camera, Check, Eye, LoaderCircle, Plus, ScanSearch, SlidersHorizontal, X } from 'lucide-react';
 import {
   analyzeDocumentCorners,
   createScannedDocumentFile,
   isValidDocumentCorners,
   previewFilter,
+  renderDocumentScan,
   type DocumentCorners,
   type ScanFilter,
 } from './documentPerspective';
@@ -55,12 +56,25 @@ export default function DocumentScanEditor({
   const [qualityStatus, setQualityStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [quality, setQuality] = useState<ScanQualityResult | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [previewProcessing, setPreviewProcessing] = useState(false);
+  const [resultPreviewUrl, setResultPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
   const stageRef = useRef<HTMLDivElement | null>(null);
   const imageFrameRef = useRef<HTMLDivElement | null>(null);
+  const resultPreviewUrlRef = useRef<string | null>(null);
   const [sourceSize, setSourceSize] = useState<PreviewSize | null>(null);
   const [previewSize, setPreviewSize] = useState<PreviewSize | null>(null);
   const cornersValid = isValidDocumentCorners(corners);
+
+  const clearResultPreview = () => {
+    if (resultPreviewUrlRef.current) URL.revokeObjectURL(resultPreviewUrlRef.current);
+    resultPreviewUrlRef.current = null;
+    setResultPreviewUrl(null);
+  };
+
+  useEffect(() => () => {
+    if (resultPreviewUrlRef.current) URL.revokeObjectURL(resultPreviewUrlRef.current);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -150,6 +164,10 @@ export default function DocumentScanEditor({
     };
   }, [analysisStatus, corners, cornersValid, sourceUrl]);
 
+  useEffect(() => {
+    clearResultPreview();
+  }, [sourceUrl, corners, filter]);
+
   const updateCorner = (key: CornerKey, event: ReactPointerEvent<HTMLButtonElement>) => {
     const rect = imageFrameRef.current?.getBoundingClientRect();
     if (!rect?.width || !rect.height) return;
@@ -189,6 +207,28 @@ export default function DocumentScanEditor({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Der Scan konnte nicht erstellt werden.');
       setProcessing(false);
+    }
+  };
+
+  const openResultPreview = async () => {
+    if (!cornersValid || previewProcessing) return;
+    setPreviewProcessing(true);
+    setError('');
+    try {
+      const canvas = await renderDocumentScan(sourceUrl, corners, filter, 1800);
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((result) => result
+          ? resolve(result)
+          : reject(new Error('Die Vorschau konnte nicht erstellt werden.')), 'image/jpeg', 0.94);
+      });
+      clearResultPreview();
+      const url = URL.createObjectURL(blob);
+      resultPreviewUrlRef.current = url;
+      setResultPreviewUrl(url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Die Vorschau konnte nicht erstellt werden.');
+    } finally {
+      setPreviewProcessing(false);
     }
   };
 
@@ -320,6 +360,10 @@ export default function DocumentScanEditor({
               </button>
             ))}
           </div>
+          <button className="scanResultPreviewButton" type="button" onClick={() => void openResultPreview()} disabled={previewProcessing || processing || analysisStatus === 'loading' || !cornersValid}>
+            {previewProcessing ? <LoaderCircle className="spin" /> : <Eye />}
+            {previewProcessing ? 'Vorschau wird erstellt ...' : <>Ergebnis pr{'ü'}fen</>}
+          </button>
         </div>
 
         {error && <p className="scanEditorError">{error}</p>}
@@ -339,6 +383,32 @@ export default function DocumentScanEditor({
           </button>
         </div>
       </div>
+
+      {resultPreviewUrl && (
+        <div className="scanResultPreview" role="dialog" aria-modal="true" aria-label="Fertige Scan-Vorschau">
+          <header>
+            <button className="icon" type="button" onClick={clearResultPreview} aria-label={'Scan-Vorschau schließen'}>
+              <X />
+            </button>
+            <span>
+              <b>Ergebnis kontrollieren</b>
+              <small>So wird diese Seite gespeichert</small>
+            </span>
+          </header>
+          <div className="scanResultPreviewBody">
+            <img src={resultPreviewUrl} alt="Fertig zugeschnittener Dokumentscan" />
+          </div>
+          <footer>
+            <button className="secondary" type="button" onClick={clearResultPreview}>
+              <ScanSearch /> {'Zurück zum Zuschnitt'}
+            </button>
+            <button className="primary" type="button" onClick={() => void useScan()} disabled={processing}>
+              {processing ? <LoaderCircle className="spin" /> : <Check />}
+              {processing ? 'Wird gespeichert ...' : 'Scan verwenden'}
+            </button>
+          </footer>
+        </div>
+      )}
     </div>
   );
 }
